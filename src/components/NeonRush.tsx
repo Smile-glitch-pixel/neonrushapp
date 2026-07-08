@@ -50,7 +50,7 @@ class AudioEngine {
     const root = 55; // A1
     const tick = () => {
       if (!this.ctx || !this.musicGain) return;
-      const t = this.ctx.now?.() ?? this.ctx.currentTime;
+      const t = this.ctx.currentTime;
       // Bass pulse
       this.playTone({
         freq: root * Math.pow(2, scale[this.step % scale.length] / 12) / 2,
