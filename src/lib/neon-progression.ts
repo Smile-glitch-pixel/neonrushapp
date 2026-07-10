@@ -11,6 +11,13 @@ export const SKINS: { id: SkinId; name: string; price: number; colors: [string, 
   { id: "rainbow", name: "Rainbow", price: 5000, colors: ["#ff2e6a", "#fff17a", "#7bf3ff"], rarity: "legendary" },
 ];
 
+export const REWARD_MULT: Record<GameMode, number> = {
+  zen: 0.4,
+  classic: 1,
+  blitz: 1.2,
+  hardcore: 1.7,
+};
+
 export const MODES: { id: GameMode; nameKey: string; descKey: string }[] = [
   { id: "classic", nameKey: "modeClassic", descKey: "modeClassicDesc" },
   { id: "hardcore", nameKey: "modeHardcore", descKey: "modeHardcoreDesc" },
