@@ -262,11 +262,12 @@ export default function NeonRush() {
   }, []);
 
   // End-of-run rewards
-  const finishRun = useCallback((finalScore: number) => {
-    const earnedCoins = Math.floor(finalScore / 10);
-    const earnedXP = Math.floor(finalScore / 6);
-    // Random skin drop chance based on score (max ~25%)
-    const dropChance = Math.min(0.25, finalScore / 20000);
+  const finishRun = useCallback((finalScore: number, finalMode: GameMode) => {
+    const mult = REWARD_MULT[finalMode] ?? 1;
+    const earnedCoins = Math.floor((finalScore / 10) * mult);
+    const earnedXP = Math.floor((finalScore / 6) * mult);
+    // Skin drop chance scales with score and difficulty
+    const dropChance = Math.min(0.25, (finalScore / 20000) * mult);
     let droppedSkin: SkinId | undefined;
     if (Math.random() < dropChance) {
       const unowned = SKINS.filter((s) => s.rarity !== "legendary");
@@ -275,12 +276,12 @@ export default function NeonRush() {
     }
     setProg((p) => {
       const owned = droppedSkin && !p.owned.includes(droppedSkin) ? [...p.owned, droppedSkin] : p.owned;
-      const bestByMode = { ...p.bestByMode, [mode]: Math.max(p.bestByMode[mode] || 0, finalScore) };
+      const bestByMode = { ...p.bestByMode, [finalMode]: Math.max(p.bestByMode[finalMode] || 0, finalScore) };
       return { ...p, coins: p.coins + earnedCoins, xp: p.xp + earnedXP, owned, bestByMode };
     });
     setRewardEarned({ coins: earnedCoins, xp: earnedXP, skin: droppedSkin && !prog.owned.includes(droppedSkin) ? droppedSkin : undefined });
     if (droppedSkin && !prog.owned.includes(droppedSkin)) showToast(`${t(lang, "newSkin")} ${SKINS.find((s) => s.id === droppedSkin)?.name}`);
-  }, [mode, prog.owned, lang]);
+  }, [prog.owned, lang]);
 
   // Main loop
   useEffect(() => {
