@@ -447,18 +447,25 @@ export default function NeonRush() {
           ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, 0, e.r * 3, 0, Math.PI * 2); ctx.fill();
           ctx.fillStyle = "#eaffff"; ctx.beginPath(); ctx.arc(0, 0, e.r * 0.7, 0, Math.PI * 2); ctx.fill();
         } else if (e.kind === "hazard") {
-          const g = ctx.createRadialGradient(0, 0, 0, 0, 0, e.r * 2.4);
-          g.addColorStop(0, "rgba(255,80,140,0.95)"); g.addColorStop(1, "rgba(255,46,106,0)");
-          ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, 0, e.r * 2.4, 0, Math.PI * 2); ctx.fill();
-          ctx.strokeStyle = "#ff2e6a"; ctx.lineWidth = 2; ctx.beginPath();
+          // Compact halo (smaller radius = sharper on high-DPR mobile)
+          const g = ctx.createRadialGradient(0, 0, e.r * 0.6, 0, 0, e.r * 1.6);
+          g.addColorStop(0, "rgba(255,60,120,0.55)");
+          g.addColorStop(1, "rgba(255,46,106,0)");
+          ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, 0, e.r * 1.6, 0, Math.PI * 2); ctx.fill();
+          // Crisp solid body
+          ctx.fillStyle = "#ff2e6a"; ctx.beginPath(); ctx.arc(0, 0, e.r, 0, Math.PI * 2); ctx.fill();
+          // Sharp spike ring outline
+          ctx.strokeStyle = "#ffe0ec"; ctx.lineWidth = 1.5; ctx.beginPath();
           const spikes = 8;
           for (let k = 0; k < spikes * 2; k++) {
-            const rr = k % 2 === 0 ? e.r : e.r * 0.55;
+            const rr = k % 2 === 0 ? e.r * 1.05 : e.r * 0.7;
             const a = (k / (spikes * 2)) * Math.PI * 2;
             const px = Math.cos(a) * rr, py = Math.sin(a) * rr;
             if (k === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
           }
           ctx.closePath(); ctx.stroke();
+          // Bright core
+          ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(0, 0, e.r * 0.3, 0, Math.PI * 2); ctx.fill();
         } else if (e.kind === "power") {
           const colors: Record<string, string> = { shield: "#a0ffea", slow: "#c39bff", magnet: "#ffb36b", x2: "#fff17a" };
           const c = colors[e.power!] || "#fff17a";
