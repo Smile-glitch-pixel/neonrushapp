@@ -174,6 +174,7 @@ const DICT: Record<Lang, Dict> = {
     newSkin: "¡Nuevo skin!",
     notEnough: "Monedas insuficientes",
     passProgress: "Progreso del pase",
+    quit: "Salir",
   },
 };
 
