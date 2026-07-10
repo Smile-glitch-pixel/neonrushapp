@@ -118,6 +118,7 @@ const DICT: Record<Lang, Dict> = {
     newSkin: "New skin!",
     notEnough: "Not enough coins",
     passProgress: "Pass progress",
+    quit: "Quit",
   },
   es: {
     tagline: "Arcade infinito",
