@@ -366,7 +366,7 @@ export default function NeonRush() {
 
         // Tight tracking for touch/mouse (input already snaps on touch); smooth for keyboard
         s.player.x += (s.player.tx - s.player.x) * 0.55;
-        s.player.y += (s.player.ty - s.player.y) * 0.22;
+        s.player.y += (s.player.ty - s.player.y) * 0.55;
         s.player.x = Math.max(s.player.r, Math.min(s.w - s.player.r, s.player.x));
         s.player.y = Math.max(s.player.r, Math.min(s.h - s.player.r, s.player.y));
         s.player.trail.push({ x: s.player.x, y: s.player.y });
