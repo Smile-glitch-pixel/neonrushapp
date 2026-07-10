@@ -356,13 +356,16 @@ export default function NeonRush() {
           setTimeLeft(Math.ceil(left / 1000));
           if (left <= 0) { gameOverNow(); }
         }
-        const spawnRate = Math.max(220, 700 - s.t * 0.05);
+        const spawnBase = s.mode === "zen" ? 1200 : 700;
+        const spawnMin = s.mode === "zen" ? 700 : 260;
+        const spawnRate = Math.max(spawnMin, spawnBase - s.t * 0.05);
         if (s.t - s.lastSpawn > spawnRate) {
-          spawn(); if (Math.random() < 0.25 * s.difficulty) spawn(); s.lastSpawn = s.t;
+          spawn(); if (Math.random() < 0.15 * s.difficulty) spawn(); s.lastSpawn = s.t;
         }
         if (s.mode !== "hardcore" && s.t - s.lastPower > 9000) { spawnPower(); s.lastPower = s.t; }
 
-        s.player.x += (s.player.tx - s.player.x) * 0.22;
+        // Tight tracking for touch/mouse (input already snaps on touch); smooth for keyboard
+        s.player.x += (s.player.tx - s.player.x) * 0.55;
         s.player.y += (s.player.ty - s.player.y) * 0.22;
         s.player.x = Math.max(s.player.r, Math.min(s.w - s.player.r, s.player.x));
         s.player.y = Math.max(s.player.r, Math.min(s.h - s.player.r, s.player.y));
