@@ -193,17 +193,28 @@ export default function NeonRush() {
     setGameOver(false); setRunning(true); setPanel(null); setRewardEarned(null);
   }, [prog.equipped]);
 
-  // Input
+  // Input — Pointer Events for zero-latency touch/mouse tracking
   useEffect(() => {
     const canvas = canvasRef.current!;
     const s = stateRef.current;
-    const onMove = (x: number, y: number) => {
+    const setFromClient = (clientX: number, clientY: number, snap: boolean) => {
       const rect = canvas.getBoundingClientRect();
-      s.player.tx = ((x - rect.left) / rect.width) * s.w;
-      s.player.ty = ((y - rect.top) / rect.height) * s.h;
+      const x = ((clientX - rect.left) / rect.width) * s.w;
+      const y = ((clientY - rect.top) / rect.height) * s.h;
+      s.player.tx = x; s.player.ty = y;
+      if (snap) { s.player.x = x; s.player.y = y; }
     };
-    const mm = (e: MouseEvent) => onMove(e.clientX, e.clientY);
-    const tm = (e: TouchEvent) => { if (e.touches[0]) { onMove(e.touches[0].clientX, e.touches[0].clientY); e.preventDefault(); } };
+    const onPointerDown = (e: PointerEvent) => {
+      setFromClient(e.clientX, e.clientY, true);
+      try { canvas.setPointerCapture(e.pointerId); } catch { /* noop */ }
+    };
+    const onPointerMove = (e: PointerEvent) => {
+      // Coalesce for smoothest tracking
+      const events = (e.getCoalescedEvents?.() as PointerEvent[] | undefined) ?? [e];
+      const last = events[events.length - 1];
+      setFromClient(last.clientX, last.clientY, e.pointerType !== "mouse");
+      if (e.pointerType !== "mouse") e.preventDefault();
+    };
     const keys: Record<string, boolean> = {};
     const kd = (e: KeyboardEvent) => { keys[e.key.toLowerCase()] = true; };
     const ku = (e: KeyboardEvent) => { keys[e.key.toLowerCase()] = false; };
@@ -217,16 +228,14 @@ export default function NeonRush() {
       raf = requestAnimationFrame(kbLoop);
     };
     kbLoop();
-    canvas.addEventListener("mousemove", mm);
-    canvas.addEventListener("touchmove", tm, { passive: false });
-    canvas.addEventListener("touchstart", tm, { passive: false });
+    canvas.addEventListener("pointerdown", onPointerDown);
+    canvas.addEventListener("pointermove", onPointerMove, { passive: false });
     window.addEventListener("keydown", kd);
     window.addEventListener("keyup", ku);
     return () => {
       cancelAnimationFrame(raf);
-      canvas.removeEventListener("mousemove", mm);
-      canvas.removeEventListener("touchmove", tm);
-      canvas.removeEventListener("touchstart", tm);
+      canvas.removeEventListener("pointerdown", onPointerDown);
+      canvas.removeEventListener("pointermove", onPointerMove);
       window.removeEventListener("keydown", kd);
       window.removeEventListener("keyup", ku);
     };
