@@ -596,7 +596,7 @@ export default function NeonRush() {
 
   return (
     <main className="scanlines relative h-screen w-screen overflow-hidden">
-      <canvas ref={canvasRef} className="absolute inset-0 h-full w-full" />
+      <canvas ref={canvasRef} className="absolute inset-0 h-full w-full" style={{ touchAction: "none" }} />
       <div className="scanlines-overlay" />
 
       {/* HUD */}
