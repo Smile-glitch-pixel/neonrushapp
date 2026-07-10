@@ -104,7 +104,7 @@ const DICT: Record<Lang, Dict> = {
     modeBlitz: "Blitz 60s",
     modeClassicDesc: "Original mode, rising difficulty.",
     modeHardcoreDesc: "1.5× faster, no power-ups.",
-    modeZenDesc: "No hazards, pure combo.",
+    modeZenDesc: "Slow pace, very rare hazards. Reduced rewards.",
     modeBlitzDesc: "Rack up points in 60 seconds.",
     back: "Back",
     close: "Close",
