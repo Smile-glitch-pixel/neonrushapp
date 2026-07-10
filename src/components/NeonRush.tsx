@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { LANGS, type Lang, t } from "@/lib/i18n";
 import {
-  MODES, SKINS, PASS_TIERS, PASS_XP_PER_TIER, PASS_REWARDS, rankFor,
+  MODES, SKINS, PASS_TIERS, PASS_XP_PER_TIER, PASS_REWARDS, REWARD_MULT, rankFor,
   loadProg, saveProg, type GameMode, type Progression, type SkinId,
 } from "@/lib/neon-progression";
 
@@ -193,17 +193,28 @@ export default function NeonRush() {
     setGameOver(false); setRunning(true); setPanel(null); setRewardEarned(null);
   }, [prog.equipped]);
 
-  // Input
+  // Input — Pointer Events for zero-latency touch/mouse tracking
   useEffect(() => {
     const canvas = canvasRef.current!;
     const s = stateRef.current;
-    const onMove = (x: number, y: number) => {
+    const setFromClient = (clientX: number, clientY: number, snap: boolean) => {
       const rect = canvas.getBoundingClientRect();
-      s.player.tx = ((x - rect.left) / rect.width) * s.w;
-      s.player.ty = ((y - rect.top) / rect.height) * s.h;
+      const x = ((clientX - rect.left) / rect.width) * s.w;
+      const y = ((clientY - rect.top) / rect.height) * s.h;
+      s.player.tx = x; s.player.ty = y;
+      if (snap) { s.player.x = x; s.player.y = y; }
     };
-    const mm = (e: MouseEvent) => onMove(e.clientX, e.clientY);
-    const tm = (e: TouchEvent) => { if (e.touches[0]) { onMove(e.touches[0].clientX, e.touches[0].clientY); e.preventDefault(); } };
+    const onPointerDown = (e: PointerEvent) => {
+      setFromClient(e.clientX, e.clientY, true);
+      try { canvas.setPointerCapture(e.pointerId); } catch { /* noop */ }
+    };
+    const onPointerMove = (e: PointerEvent) => {
+      // Coalesce for smoothest tracking
+      const events = (e.getCoalescedEvents?.() as PointerEvent[] | undefined) ?? [e];
+      const last = events[events.length - 1];
+      setFromClient(last.clientX, last.clientY, e.pointerType !== "mouse");
+      if (e.pointerType !== "mouse") e.preventDefault();
+    };
     const keys: Record<string, boolean> = {};
     const kd = (e: KeyboardEvent) => { keys[e.key.toLowerCase()] = true; };
     const ku = (e: KeyboardEvent) => { keys[e.key.toLowerCase()] = false; };
@@ -217,16 +228,14 @@ export default function NeonRush() {
       raf = requestAnimationFrame(kbLoop);
     };
     kbLoop();
-    canvas.addEventListener("mousemove", mm);
-    canvas.addEventListener("touchmove", tm, { passive: false });
-    canvas.addEventListener("touchstart", tm, { passive: false });
+    canvas.addEventListener("pointerdown", onPointerDown);
+    canvas.addEventListener("pointermove", onPointerMove, { passive: false });
     window.addEventListener("keydown", kd);
     window.addEventListener("keyup", ku);
     return () => {
       cancelAnimationFrame(raf);
-      canvas.removeEventListener("mousemove", mm);
-      canvas.removeEventListener("touchmove", tm);
-      canvas.removeEventListener("touchstart", tm);
+      canvas.removeEventListener("pointerdown", onPointerDown);
+      canvas.removeEventListener("pointermove", onPointerMove);
       window.removeEventListener("keydown", kd);
       window.removeEventListener("keyup", ku);
     };
@@ -253,11 +262,12 @@ export default function NeonRush() {
   }, []);
 
   // End-of-run rewards
-  const finishRun = useCallback((finalScore: number) => {
-    const earnedCoins = Math.floor(finalScore / 10);
-    const earnedXP = Math.floor(finalScore / 6);
-    // Random skin drop chance based on score (max ~25%)
-    const dropChance = Math.min(0.25, finalScore / 20000);
+  const finishRun = useCallback((finalScore: number, finalMode: GameMode) => {
+    const mult = REWARD_MULT[finalMode] ?? 1;
+    const earnedCoins = Math.floor((finalScore / 10) * mult);
+    const earnedXP = Math.floor((finalScore / 6) * mult);
+    // Skin drop chance scales with score and difficulty
+    const dropChance = Math.min(0.25, (finalScore / 20000) * mult);
     let droppedSkin: SkinId | undefined;
     if (Math.random() < dropChance) {
       const unowned = SKINS.filter((s) => s.rarity !== "legendary");
@@ -266,12 +276,12 @@ export default function NeonRush() {
     }
     setProg((p) => {
       const owned = droppedSkin && !p.owned.includes(droppedSkin) ? [...p.owned, droppedSkin] : p.owned;
-      const bestByMode = { ...p.bestByMode, [mode]: Math.max(p.bestByMode[mode] || 0, finalScore) };
+      const bestByMode = { ...p.bestByMode, [finalMode]: Math.max(p.bestByMode[finalMode] || 0, finalScore) };
       return { ...p, coins: p.coins + earnedCoins, xp: p.xp + earnedXP, owned, bestByMode };
     });
     setRewardEarned({ coins: earnedCoins, xp: earnedXP, skin: droppedSkin && !prog.owned.includes(droppedSkin) ? droppedSkin : undefined });
     if (droppedSkin && !prog.owned.includes(droppedSkin)) showToast(`${t(lang, "newSkin")} ${SKINS.find((s) => s.id === droppedSkin)?.name}`);
-  }, [mode, prog.owned, lang]);
+  }, [prog.owned, lang]);
 
   // Main loop
   useEffect(() => {
@@ -292,7 +302,7 @@ export default function NeonRush() {
       const dx = towards.x - x, dy = towards.y - y;
       const len = Math.hypot(dx, dy) || 1;
       const speed = rand(1.2, 2.4) * s.difficulty;
-      const hazardChance = s.mode === "zen" ? 0 : s.mode === "hardcore" ? 0.55 : 0.42;
+      const hazardChance = s.mode === "zen" ? 0.05 : s.mode === "hardcore" ? 0.55 : 0.32;
       const isHazard = Math.random() < hazardChance;
       s.entities.push({
         x, y, vx: (dx / len) * speed, vy: (dy / len) * speed,
@@ -321,7 +331,7 @@ export default function NeonRush() {
       audioRef.current.gameover();
       const fs = Math.floor(s.score);
       setScore(fs); setGameOver(true); setRunning(false);
-      finishRun(fs);
+      finishRun(fs, s.mode);
     };
 
     const loop = (now: number) => {
@@ -346,14 +356,17 @@ export default function NeonRush() {
           setTimeLeft(Math.ceil(left / 1000));
           if (left <= 0) { gameOverNow(); }
         }
-        const spawnRate = Math.max(220, 700 - s.t * 0.05);
+        const spawnBase = s.mode === "zen" ? 1200 : 700;
+        const spawnMin = s.mode === "zen" ? 700 : 260;
+        const spawnRate = Math.max(spawnMin, spawnBase - s.t * 0.05);
         if (s.t - s.lastSpawn > spawnRate) {
-          spawn(); if (Math.random() < 0.25 * s.difficulty) spawn(); s.lastSpawn = s.t;
+          spawn(); if (Math.random() < 0.15 * s.difficulty) spawn(); s.lastSpawn = s.t;
         }
         if (s.mode !== "hardcore" && s.t - s.lastPower > 9000) { spawnPower(); s.lastPower = s.t; }
 
-        s.player.x += (s.player.tx - s.player.x) * 0.22;
-        s.player.y += (s.player.ty - s.player.y) * 0.22;
+        // Tight tracking for touch/mouse (input already snaps on touch); smooth for keyboard
+        s.player.x += (s.player.tx - s.player.x) * 0.55;
+        s.player.y += (s.player.ty - s.player.y) * 0.55;
         s.player.x = Math.max(s.player.r, Math.min(s.w - s.player.r, s.player.x));
         s.player.y = Math.max(s.player.r, Math.min(s.h - s.player.r, s.player.y));
         s.player.trail.push({ x: s.player.x, y: s.player.y });
@@ -434,18 +447,25 @@ export default function NeonRush() {
           ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, 0, e.r * 3, 0, Math.PI * 2); ctx.fill();
           ctx.fillStyle = "#eaffff"; ctx.beginPath(); ctx.arc(0, 0, e.r * 0.7, 0, Math.PI * 2); ctx.fill();
         } else if (e.kind === "hazard") {
-          const g = ctx.createRadialGradient(0, 0, 0, 0, 0, e.r * 2.4);
-          g.addColorStop(0, "rgba(255,80,140,0.95)"); g.addColorStop(1, "rgba(255,46,106,0)");
-          ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, 0, e.r * 2.4, 0, Math.PI * 2); ctx.fill();
-          ctx.strokeStyle = "#ff2e6a"; ctx.lineWidth = 2; ctx.beginPath();
+          // Compact halo (smaller radius = sharper on high-DPR mobile)
+          const g = ctx.createRadialGradient(0, 0, e.r * 0.6, 0, 0, e.r * 1.6);
+          g.addColorStop(0, "rgba(255,60,120,0.55)");
+          g.addColorStop(1, "rgba(255,46,106,0)");
+          ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, 0, e.r * 1.6, 0, Math.PI * 2); ctx.fill();
+          // Crisp solid body
+          ctx.fillStyle = "#ff2e6a"; ctx.beginPath(); ctx.arc(0, 0, e.r, 0, Math.PI * 2); ctx.fill();
+          // Sharp spike ring outline
+          ctx.strokeStyle = "#ffe0ec"; ctx.lineWidth = 1.5; ctx.beginPath();
           const spikes = 8;
           for (let k = 0; k < spikes * 2; k++) {
-            const rr = k % 2 === 0 ? e.r : e.r * 0.55;
+            const rr = k % 2 === 0 ? e.r * 1.05 : e.r * 0.7;
             const a = (k / (spikes * 2)) * Math.PI * 2;
             const px = Math.cos(a) * rr, py = Math.sin(a) * rr;
             if (k === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
           }
           ctx.closePath(); ctx.stroke();
+          // Bright core
+          ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(0, 0, e.r * 0.3, 0, Math.PI * 2); ctx.fill();
         } else if (e.kind === "power") {
           const colors: Record<string, string> = { shield: "#a0ffea", slow: "#c39bff", magnet: "#ffb36b", x2: "#fff17a" };
           const c = colors[e.power!] || "#fff17a";
@@ -576,7 +596,7 @@ export default function NeonRush() {
 
   return (
     <main className="scanlines relative h-screen w-screen overflow-hidden">
-      <canvas ref={canvasRef} className="absolute inset-0 h-full w-full" />
+      <canvas ref={canvasRef} className="absolute inset-0 h-full w-full" style={{ touchAction: "none" }} />
       <div className="scanlines-overlay" />
 
       {/* HUD */}
@@ -598,6 +618,18 @@ export default function NeonRush() {
           <button onClick={() => setMuted((m) => !m)} className="panel-neon pointer-events-auto rounded-lg px-3 py-2 text-xs font-bold uppercase tracking-widest text-glow-cyan transition hover:scale-105">
             {muted ? `🔇 ${tr("muted")}` : `🔊 ${tr("sound")}`}
           </button>
+          {running && (
+            <button
+              onClick={() => {
+                const s = stateRef.current;
+                s.running = false; s.over = true;
+                setRunning(false); setGameOver(false); setRewardEarned(null);
+              }}
+              className="panel-neon pointer-events-auto rounded-lg px-3 py-2 text-xs font-bold uppercase tracking-widest text-glow-magenta transition hover:scale-105"
+            >
+              ✕ {tr("quit")}
+            </button>
+          )}
           {combo > 1 && running && (
             <div className="panel-neon rounded-xl px-4 py-2 animate-scale-in">
               <div className="text-[10px] uppercase tracking-[0.3em] text-muted-foreground">{tr("combo")}</div>

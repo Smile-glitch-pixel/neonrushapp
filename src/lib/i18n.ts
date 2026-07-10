@@ -48,7 +48,7 @@ const DICT: Record<Lang, Dict> = {
     modeBlitz: "Blitz 60s",
     modeClassicDesc: "Le mode d'origine, difficulté croissante.",
     modeHardcoreDesc: "1.5× plus rapide, aucun power-up.",
-    modeZenDesc: "Aucun danger, juste des combos.",
+    modeZenDesc: "Rythme lent, dangers très rares. Récompenses réduites.",
     modeBlitzDesc: "Marque un maximum en 60 secondes.",
     back: "Retour",
     close: "Fermer",
@@ -62,6 +62,7 @@ const DICT: Record<Lang, Dict> = {
     newSkin: "Nouveau skin !",
     notEnough: "Pas assez de pièces",
     passProgress: "Progression du pass",
+    quit: "Quitter",
   },
   en: {
     tagline: "Endless arcade",
@@ -103,7 +104,7 @@ const DICT: Record<Lang, Dict> = {
     modeBlitz: "Blitz 60s",
     modeClassicDesc: "Original mode, rising difficulty.",
     modeHardcoreDesc: "1.5× faster, no power-ups.",
-    modeZenDesc: "No hazards, pure combo.",
+    modeZenDesc: "Slow pace, very rare hazards. Reduced rewards.",
     modeBlitzDesc: "Rack up points in 60 seconds.",
     back: "Back",
     close: "Close",
@@ -117,6 +118,7 @@ const DICT: Record<Lang, Dict> = {
     newSkin: "New skin!",
     notEnough: "Not enough coins",
     passProgress: "Pass progress",
+    quit: "Quit",
   },
   es: {
     tagline: "Arcade infinito",
@@ -158,7 +160,7 @@ const DICT: Record<Lang, Dict> = {
     modeBlitz: "Blitz 60s",
     modeClassicDesc: "Modo original, dificultad creciente.",
     modeHardcoreDesc: "1.5× más rápido, sin power-ups.",
-    modeZenDesc: "Sin peligros, solo combos.",
+    modeZenDesc: "Ritmo lento, peligros muy raros. Recompensas reducidas.",
     modeBlitzDesc: "Consigue puntos en 60 segundos.",
     back: "Volver",
     close: "Cerrar",
@@ -172,6 +174,7 @@ const DICT: Record<Lang, Dict> = {
     newSkin: "¡Nuevo skin!",
     notEnough: "Monedas insuficientes",
     passProgress: "Progreso del pase",
+    quit: "Salir",
   },
 };
 
