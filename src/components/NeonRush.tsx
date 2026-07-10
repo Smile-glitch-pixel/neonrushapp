@@ -618,6 +618,18 @@ export default function NeonRush() {
           <button onClick={() => setMuted((m) => !m)} className="panel-neon pointer-events-auto rounded-lg px-3 py-2 text-xs font-bold uppercase tracking-widest text-glow-cyan transition hover:scale-105">
             {muted ? `🔇 ${tr("muted")}` : `🔊 ${tr("sound")}`}
           </button>
+          {running && (
+            <button
+              onClick={() => {
+                const s = stateRef.current;
+                s.running = false; s.over = true;
+                setRunning(false); setGameOver(false); setRewardEarned(null);
+              }}
+              className="panel-neon pointer-events-auto rounded-lg px-3 py-2 text-xs font-bold uppercase tracking-widest text-glow-magenta transition hover:scale-105"
+            >
+              ✕ {tr("quit")}
+            </button>
+          )}
           {combo > 1 && running && (
             <div className="panel-neon rounded-xl px-4 py-2 animate-scale-in">
               <div className="text-[10px] uppercase tracking-[0.3em] text-muted-foreground">{tr("combo")}</div>
