@@ -1,9 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Link } from "@tanstack/react-router";
+import { useServerFn } from "@tanstack/react-start";
 import { LANGS, type Lang, t } from "@/lib/i18n";
 import {
   MODES, SKINS, PASS_TIERS, PASS_XP_PER_TIER, PASS_REWARDS, REWARD_MULT, rankFor,
   loadProg, saveProg, type GameMode, type Progression, type SkinId,
 } from "@/lib/neon-progression";
+import { supabase } from "@/integrations/supabase/client";
+import { pullPlayerState, pushPlayerState } from "@/lib/player-sync.functions";
+import { mergeProg, progToRemote } from "@/lib/prog-sync";
 
 /* ----------------------------- Audio Engine ----------------------------- */
 class AudioEngine {
@@ -143,15 +148,64 @@ export default function NeonRush() {
   const [toast, setToast] = useState<string>("");
   const [panel, setPanel] = useState<null | "modes" | "skins" | "pass" | "ranked" | "settings">(null);
   const [powers, setPowers] = useState<{ shield: number; slow: number; magnet: number; x2: number }>({ shield: 0, slow: 0, magnet: 0, x2: 0 });
+  const [user, setUser] = useState<{ id: string; email: string | null } | null>(null);
+  const [hydrated, setHydrated] = useState(false);
+  const pullFn = useServerFn(pullPlayerState);
+  const pushFn = useServerFn(pushPlayerState);
+  const pushTimer = useRef<number | null>(null);
 
   // Hydration-safe: load lang and prog after mount
   useEffect(() => {
     const l = (localStorage.getItem(LANG_KEY) as Lang) || (navigator.language.startsWith("es") ? "es" : navigator.language.startsWith("fr") ? "fr" : "en");
     setLang(l);
     setProg(loadProg());
+    setHydrated(true);
   }, []);
   useEffect(() => { try { localStorage.setItem(LANG_KEY, lang); } catch { /* noop */ } }, [lang]);
-  useEffect(() => { saveProg(prog); }, [prog]);
+  useEffect(() => { if (hydrated) saveProg(prog); }, [prog, hydrated]);
+
+  // Auth: track session
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => {
+      const s = data.session;
+      setUser(s ? { id: s.user.id, email: s.user.email ?? null } : null);
+    });
+    const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => {
+      setUser(s ? { id: s.user.id, email: s.user.email ?? null } : null);
+    });
+    return () => { sub.subscription.unsubscribe(); };
+  }, []);
+
+  // On login: pull remote → merge → push merged back
+  useEffect(() => {
+    if (!user || !hydrated) return;
+    let cancel = false;
+    (async () => {
+      try {
+        const remote = await pullFn();
+        if (cancel) return;
+        setProg((local) => {
+          const merged = mergeProg(local, remote as never);
+          pushFn({ data: progToRemote(merged) }).catch(() => { /* noop */ });
+          return merged;
+        });
+      } catch { /* noop */ }
+    })();
+    return () => { cancel = true; };
+  }, [user, hydrated, pullFn, pushFn]);
+
+  // Debounced push on prog changes when signed-in
+  useEffect(() => {
+    if (!user || !hydrated) return;
+    if (pushTimer.current) window.clearTimeout(pushTimer.current);
+    pushTimer.current = window.setTimeout(() => {
+      pushFn({ data: progToRemote(prog) }).catch(() => { /* noop */ });
+    }, 900);
+    return () => { if (pushTimer.current) window.clearTimeout(pushTimer.current); };
+  }, [prog, user, hydrated, pushFn]);
+
+  const signOut = async () => { await supabase.auth.signOut(); };
+
 
   const tr = useCallback((k: string) => t(lang, k), [lang]);
 
@@ -672,6 +726,22 @@ export default function NeonRush() {
                 {tr("rank")} · {rank.name}
               </span>
               <span className="panel-neon rounded-full px-3 py-1 text-glow-yellow">🪙 {prog.coins}</span>
+            </div>
+
+            {/* Account */}
+            <div className="mt-3 flex items-center justify-center gap-2 text-[10px] uppercase tracking-[0.2em]">
+              {user ? (
+                <>
+                  <span className="panel-neon rounded-full px-3 py-1 text-glow-cyan truncate max-w-[220px]">☁ {user.email ?? "Compte"}</span>
+                  <button onClick={signOut} className="panel-neon rounded-full px-3 py-1 text-glow-magenta hover:scale-105 transition">
+                    {tr("signOut")}
+                  </button>
+                </>
+              ) : (
+                <Link to="/auth" className="panel-neon rounded-full px-3 py-1 text-glow-cyan hover:scale-105 transition">
+                  ☁ {tr("signIn")}
+                </Link>
+              )}
             </div>
 
             <p className="mx-auto mt-4 max-w-sm text-sm text-muted-foreground">{tr("intro")}</p>

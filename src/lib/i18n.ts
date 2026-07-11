@@ -63,6 +63,8 @@ const DICT: Record<Lang, Dict> = {
     notEnough: "Pas assez de pièces",
     passProgress: "Progression du pass",
     quit: "Quitter",
+    signIn: "Se connecter",
+    signOut: "Déconnexion",
   },
   en: {
     tagline: "Endless arcade",
@@ -119,6 +121,8 @@ const DICT: Record<Lang, Dict> = {
     notEnough: "Not enough coins",
     passProgress: "Pass progress",
     quit: "Quit",
+    signIn: "Sign in",
+    signOut: "Sign out",
   },
   es: {
     tagline: "Arcade infinito",
@@ -175,6 +179,8 @@ const DICT: Record<Lang, Dict> = {
     notEnough: "Monedas insuficientes",
     passProgress: "Progreso del pase",
     quit: "Salir",
+    signIn: "Iniciar sesión",
+    signOut: "Cerrar sesión",
   },
 };
 
