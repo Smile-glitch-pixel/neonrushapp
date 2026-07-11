@@ -266,12 +266,12 @@ export default function NeonRush() {
     player: { x: 0, y: 0, r: 14, tx: 0, ty: 0, trail: [] as Vec[] },
     entities: [] as Entity[], particles: [] as Entity[],
     t: 0, lastSpawn: 0, lastPower: 0, shake: 0,
-    combo: 0, comboTimer: 0, score: 0,
+    combo: 0, comboTimer: 0, score: 0, maxCombo: 0,
     powers: { shield: 0, slow: 0, magnet: 0, x2: 0 },
     dpr: 1, w: 0, h: 0, over: false, running: false, difficulty: 1,
     mode: "classic" as GameMode,
     skinColors: equippedSkin.colors as [string, string, string],
-    duration: 0, // ms, 0 = infinite
+    duration: 0,
   });
 
   const start = useCallback(async (m: GameMode) => {
