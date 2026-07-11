@@ -728,6 +728,22 @@ export default function NeonRush() {
               <span className="panel-neon rounded-full px-3 py-1 text-glow-yellow">🪙 {prog.coins}</span>
             </div>
 
+            {/* Account */}
+            <div className="mt-3 flex items-center justify-center gap-2 text-[10px] uppercase tracking-[0.2em]">
+              {user ? (
+                <>
+                  <span className="panel-neon rounded-full px-3 py-1 text-glow-cyan truncate max-w-[220px]">☁ {user.email ?? "Compte"}</span>
+                  <button onClick={signOut} className="panel-neon rounded-full px-3 py-1 text-glow-magenta hover:scale-105 transition">
+                    {tr("signOut")}
+                  </button>
+                </>
+              ) : (
+                <Link to="/auth" className="panel-neon rounded-full px-3 py-1 text-glow-cyan hover:scale-105 transition">
+                  ☁ {tr("signIn")}
+                </Link>
+              )}
+            </div>
+
             <p className="mx-auto mt-4 max-w-sm text-sm text-muted-foreground">{tr("intro")}</p>
 
             {gameOver && (
