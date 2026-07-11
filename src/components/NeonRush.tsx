@@ -4,11 +4,13 @@ import { useServerFn } from "@tanstack/react-start";
 import { LANGS, type Lang, t } from "@/lib/i18n";
 import {
   MODES, SKINS, PASS_TIERS, PASS_XP_PER_TIER, PASS_REWARDS, REWARD_MULT, rankFor,
-  loadProg, saveProg, type GameMode, type Progression, type SkinId,
+  loadProg, saveProg, defaultProg, refreshMissionsIfNeeded, findTemplate,
+  type GameMode, type Progression, type SkinId, type MissionStat,
 } from "@/lib/neon-progression";
 import { supabase } from "@/integrations/supabase/client";
 import { pullPlayerState, pushPlayerState } from "@/lib/player-sync.functions";
 import { mergeProg, progToRemote } from "@/lib/prog-sync";
+import { submitScore, fetchLeaderboard, fetchMyRank } from "@/lib/leaderboard.functions";
 
 /* ----------------------------- Audio Engine ----------------------------- */
 class AudioEngine {
