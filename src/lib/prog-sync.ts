@@ -58,5 +58,5 @@ export const progToRemote = (p: Progression): RemoteState => ({
   owned: p.owned,
   equipped: p.equipped,
   best_by_mode: p.bestByMode,
-  settings: { missions: p.missions, displayName: p.displayName ?? null },
+  settings: { missions: p.missions, displayName: p.displayName },
 });
