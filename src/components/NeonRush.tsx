@@ -362,15 +362,15 @@ export default function NeonRush() {
   }, []);
 
   // End-of-run rewards
-  const finishRun = useCallback((finalScore: number, finalMode: GameMode) => {
+  const finishRun = useCallback((finalScore: number, finalMode: GameMode, finalCombo: number) => {
     const mult = REWARD_MULT[finalMode] ?? 1;
     const earnedCoins = Math.floor((finalScore / 10) * mult);
     const earnedXP = Math.floor((finalScore / 6) * mult);
-    // Skin drop chance scales with score and difficulty
+    // Skin drop chance — exclude legendary AND passOnly (exclusive)
     const dropChance = Math.min(0.25, (finalScore / 20000) * mult);
     let droppedSkin: SkinId | undefined;
     if (Math.random() < dropChance) {
-      const unowned = SKINS.filter((s) => s.rarity !== "legendary");
+      const unowned = SKINS.filter((s) => s.rarity !== "legendary" && !s.passOnly);
       const pick = unowned[Math.floor(Math.random() * unowned.length)];
       if (pick) droppedSkin = pick.id;
     }
@@ -381,7 +381,25 @@ export default function NeonRush() {
     });
     setRewardEarned({ coins: earnedCoins, xp: earnedXP, skin: droppedSkin && !prog.owned.includes(droppedSkin) ? droppedSkin : undefined });
     if (droppedSkin && !prog.owned.includes(droppedSkin)) showToast(`${t(lang, "newSkin")} ${SKINS.find((s) => s.id === droppedSkin)?.name}`);
-  }, [prog.owned, lang]);
+
+    // Missions: runs / score / combo (only if run wasn't quit early — Zen quits use gameOverNow too, we still count)
+    bumpMissionRef.current("runs", 1);
+    if (finalMode === "blitz") bumpMissionRef.current("blitzRuns", 1, "blitz");
+    bumpMissionRef.current("score", finalScore);
+    if (finalMode === "hardcore") bumpMissionRef.current("hardcoreScore", finalScore, "hardcore");
+    bumpMissionRef.current("combo", finalCombo);
+
+    // Leaderboard submit if signed in
+    if (user && finalScore > 0) {
+      submitScoreFn({ data: {
+        mode: finalMode,
+        score: finalScore,
+        display_name: prog.displayName ?? user.email?.split("@")[0] ?? null,
+        equipped_skin: prog.equipped,
+      } }).catch(() => { /* noop */ });
+    }
+  }, [prog.owned, prog.displayName, prog.equipped, lang, user, submitScoreFn]);
+
 
   // Main loop
   useEffect(() => {
