@@ -516,17 +516,19 @@ export default function NeonRush() {
           const rr = (e.r + s.player.r) ** 2;
           if (dist2(e, s.player) < rr) {
             if (e.kind === "orb") {
-              s.combo++; s.comboTimer = 1800;
+              s.combo++; s.comboTimer = 1800; if (s.combo > s.maxCombo) s.maxCombo = s.combo;
               const mul = s.powers.x2 > 0 ? 2 : 1;
               const gain = (10 + s.combo * 2) * mul;
               s.score += gain; setScore(Math.floor(s.score)); setCombo(s.combo);
               audioRef.current.pickup(s.combo);
               burst(e.x, e.y, "#7bf3ff", 18, 1);
               s.entities.splice(i, 1);
+              bumpMissionRef.current("orbs", 1);
             } else if (e.kind === "power" && e.power) {
               s.powers[e.power] = 6000; setPowers({ ...s.powers });
               audioRef.current.power(); burst(e.x, e.y, "#fff17a", 40, 1.4);
               s.entities.splice(i, 1);
+              bumpMissionRef.current("powers", 1);
             } else if (e.kind === "hazard") {
               if (s.powers.shield > 0) {
                 s.powers.shield = 0; setPowers({ ...s.powers });
