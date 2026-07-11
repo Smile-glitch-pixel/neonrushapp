@@ -138,7 +138,7 @@ export default function NeonRush() {
   const audioRef = useRef<AudioEngine>(new AudioEngine());
 
   const [lang, setLang] = useState<Lang>("fr");
-  const [prog, setProg] = useState<Progression>(() => ({ coins: 0, xp: 0, claimed: [], owned: ["cyan"], equipped: "cyan", bestByMode: { classic: 0, hardcore: 0, zen: 0, blitz: 0 } }));
+  const [prog, setProg] = useState<Progression>(() => defaultProg());
   const [mode, setMode] = useState<GameMode>("classic");
   const [running, setRunning] = useState(false);
   const [gameOver, setGameOver] = useState(false);
