@@ -43,7 +43,7 @@ export const pushPlayerState = createServerFn({ method: "POST" })
         owned: data.owned,
         equipped: data.equipped,
         best_by_mode: data.best_by_mode,
-        settings: data.settings ?? {},
+        settings: (data.settings ?? {}) as never,
       }, { onConflict: "user_id" });
     if (error) throw error;
     return { ok: true };
