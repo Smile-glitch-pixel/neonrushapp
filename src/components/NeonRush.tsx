@@ -670,7 +670,9 @@ export default function NeonRush() {
     setProg((p) => {
       let np = { ...p, claimed: [...p.claimed, i] };
       if (reward.type === "coins") np = { ...np, coins: np.coins + (reward.value as number) };
-      else {
+      else if (reward.type === "xp") np = { ...np, xp: np.xp + (reward.value as number) };
+      else if (reward.type === "chest") np = { ...np, coins: np.coins + 200 * (reward.value as number) };
+      else if (reward.type === "skin") {
         const sk = reward.value as SkinId;
         if (!np.owned.includes(sk)) np = { ...np, owned: [...np.owned, sk] };
       }
@@ -681,6 +683,7 @@ export default function NeonRush() {
 
   const buySkin = (id: SkinId) => {
     const sk = SKINS.find((s) => s.id === id)!;
+    if (sk.passOnly) return;
     if (prog.owned.includes(id)) return;
     if (prog.coins < sk.price) { showToast(tr("notEnough")); return; }
     setProg((p) => ({ ...p, coins: p.coins - sk.price, owned: [...p.owned, id] }));
@@ -692,7 +695,7 @@ export default function NeonRush() {
   };
   const openChest = () => {
     if (prog.coins < 250) { showToast(tr("notEnough")); return; }
-    const unowned = SKINS.filter((s) => !prog.owned.includes(s.id));
+    const unowned = SKINS.filter((s) => !prog.owned.includes(s.id) && !s.passOnly);
     setProg((p) => {
       let np = { ...p, coins: p.coins - 250 };
       if (unowned.length > 0 && Math.random() < 0.6) {
