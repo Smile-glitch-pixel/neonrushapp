@@ -4,11 +4,13 @@ import { useServerFn } from "@tanstack/react-start";
 import { LANGS, type Lang, t } from "@/lib/i18n";
 import {
   MODES, SKINS, PASS_TIERS, PASS_XP_PER_TIER, PASS_REWARDS, REWARD_MULT, rankFor,
-  loadProg, saveProg, type GameMode, type Progression, type SkinId,
+  loadProg, saveProg, defaultProg, refreshMissionsIfNeeded, findTemplate,
+  type GameMode, type Progression, type SkinId, type MissionStat,
 } from "@/lib/neon-progression";
 import { supabase } from "@/integrations/supabase/client";
 import { pullPlayerState, pushPlayerState } from "@/lib/player-sync.functions";
 import { mergeProg, progToRemote } from "@/lib/prog-sync";
+import { submitScore, fetchLeaderboard, fetchMyRank } from "@/lib/leaderboard.functions";
 
 /* ----------------------------- Audio Engine ----------------------------- */
 class AudioEngine {
@@ -136,7 +138,7 @@ export default function NeonRush() {
   const audioRef = useRef<AudioEngine>(new AudioEngine());
 
   const [lang, setLang] = useState<Lang>("fr");
-  const [prog, setProg] = useState<Progression>(() => ({ coins: 0, xp: 0, claimed: [], owned: ["cyan"], equipped: "cyan", bestByMode: { classic: 0, hardcore: 0, zen: 0, blitz: 0 } }));
+  const [prog, setProg] = useState<Progression>(() => defaultProg());
   const [mode, setMode] = useState<GameMode>("classic");
   const [running, setRunning] = useState(false);
   const [gameOver, setGameOver] = useState(false);
@@ -146,13 +148,21 @@ export default function NeonRush() {
   const [timeLeft, setTimeLeft] = useState(0);
   const [rewardEarned, setRewardEarned] = useState<{ coins: number; xp: number; skin?: SkinId } | null>(null);
   const [toast, setToast] = useState<string>("");
-  const [panel, setPanel] = useState<null | "modes" | "skins" | "pass" | "ranked" | "settings">(null);
+  const [panel, setPanel] = useState<null | "modes" | "skins" | "pass" | "ranked" | "settings" | "leaderboard" | "missions">(null);
   const [powers, setPowers] = useState<{ shield: number; slow: number; magnet: number; x2: number }>({ shield: 0, slow: 0, magnet: 0, x2: 0 });
   const [user, setUser] = useState<{ id: string; email: string | null } | null>(null);
   const [hydrated, setHydrated] = useState(false);
   const pullFn = useServerFn(pullPlayerState);
   const pushFn = useServerFn(pushPlayerState);
+  const submitScoreFn = useServerFn(submitScore);
+  const fetchLbFn = useServerFn(fetchLeaderboard);
+  const fetchRankFn = useServerFn(fetchMyRank);
   const pushTimer = useRef<number | null>(null);
+  const [lbMode, setLbMode] = useState<GameMode>("classic");
+  type LbRow = { user_id: string; mode: string; score: number; display_name: string | null; equipped_skin: string | null };
+  const [lbRows, setLbRows] = useState<LbRow[]>([]);
+  const [myRank, setMyRank] = useState<{ score: number; rank: number | null; total: number } | null>(null);
+  const [lbLoading, setLbLoading] = useState(false);
 
   // Hydration-safe: load lang and prog after mount
   useEffect(() => {
@@ -163,6 +173,42 @@ export default function NeonRush() {
   }, []);
   useEffect(() => { try { localStorage.setItem(LANG_KEY, lang); } catch { /* noop */ } }, [lang]);
   useEffect(() => { if (hydrated) saveProg(prog); }, [prog, hydrated]);
+
+  // Refresh missions when day/week rolls over (checked every minute)
+  useEffect(() => {
+    if (!hydrated) return;
+    const tick = () => setProg((p) => {
+      const next = refreshMissionsIfNeeded(p.missions);
+      if (next === p.missions) return p;
+      return { ...p, missions: next };
+    });
+    const id = window.setInterval(tick, 60_000);
+    return () => window.clearInterval(id);
+  }, [hydrated]);
+
+  // Mission progress incrementer
+  const bumpMission = useCallback((stat: MissionStat, delta: number, forMode?: GameMode) => {
+    setProg((p) => {
+      const bump = (list: typeof p.missions.daily.list) => list.map((m) => {
+        if (m.claimed) return m;
+        const tpl = findTemplate(m.id);
+        if (!tpl || tpl.stat !== stat) return m;
+        if (stat === "blitzRuns" && forMode !== "blitz") return m;
+        if (stat === "hardcoreScore" && forMode !== "hardcore") return m;
+        return { ...m, progress: Math.min(tpl.target, m.progress + delta) };
+      });
+      return {
+        ...p,
+        missions: {
+          daily: { ...p.missions.daily, list: bump(p.missions.daily.list) },
+          weekly: { ...p.missions.weekly, list: bump(p.missions.weekly.list) },
+        },
+      };
+    });
+  }, []);
+  const bumpMissionRef = useRef(bumpMission);
+  useEffect(() => { bumpMissionRef.current = bumpMission; }, [bumpMission]);
+
 
   // Auth: track session
   useEffect(() => {
@@ -220,12 +266,12 @@ export default function NeonRush() {
     player: { x: 0, y: 0, r: 14, tx: 0, ty: 0, trail: [] as Vec[] },
     entities: [] as Entity[], particles: [] as Entity[],
     t: 0, lastSpawn: 0, lastPower: 0, shake: 0,
-    combo: 0, comboTimer: 0, score: 0,
+    combo: 0, comboTimer: 0, score: 0, maxCombo: 0,
     powers: { shield: 0, slow: 0, magnet: 0, x2: 0 },
     dpr: 1, w: 0, h: 0, over: false, running: false, difficulty: 1,
     mode: "classic" as GameMode,
     skinColors: equippedSkin.colors as [string, string, string],
-    duration: 0, // ms, 0 = infinite
+    duration: 0,
   });
 
   const start = useCallback(async (m: GameMode) => {
@@ -235,7 +281,7 @@ export default function NeonRush() {
     s.player.x = s.w / 2; s.player.y = s.h / 2;
     s.player.tx = s.player.x; s.player.ty = s.player.y; s.player.trail = [];
     s.t = 0; s.lastSpawn = 0; s.lastPower = 0;
-    s.combo = 0; s.comboTimer = 0; s.score = 0; s.shake = 0;
+    s.combo = 0; s.comboTimer = 0; s.score = 0; s.shake = 0; s.maxCombo = 0;
     s.powers = { shield: 0, slow: 0, magnet: 0, x2: 0 };
     s.over = false; s.running = true; s.difficulty = m === "hardcore" ? 1.5 : 1;
     s.mode = m;
@@ -316,15 +362,15 @@ export default function NeonRush() {
   }, []);
 
   // End-of-run rewards
-  const finishRun = useCallback((finalScore: number, finalMode: GameMode) => {
+  const finishRun = useCallback((finalScore: number, finalMode: GameMode, finalCombo: number) => {
     const mult = REWARD_MULT[finalMode] ?? 1;
     const earnedCoins = Math.floor((finalScore / 10) * mult);
     const earnedXP = Math.floor((finalScore / 6) * mult);
-    // Skin drop chance scales with score and difficulty
+    // Skin drop chance — exclude legendary AND passOnly (exclusive)
     const dropChance = Math.min(0.25, (finalScore / 20000) * mult);
     let droppedSkin: SkinId | undefined;
     if (Math.random() < dropChance) {
-      const unowned = SKINS.filter((s) => s.rarity !== "legendary");
+      const unowned = SKINS.filter((s) => s.rarity !== "legendary" && !s.passOnly);
       const pick = unowned[Math.floor(Math.random() * unowned.length)];
       if (pick) droppedSkin = pick.id;
     }
@@ -335,7 +381,25 @@ export default function NeonRush() {
     });
     setRewardEarned({ coins: earnedCoins, xp: earnedXP, skin: droppedSkin && !prog.owned.includes(droppedSkin) ? droppedSkin : undefined });
     if (droppedSkin && !prog.owned.includes(droppedSkin)) showToast(`${t(lang, "newSkin")} ${SKINS.find((s) => s.id === droppedSkin)?.name}`);
-  }, [prog.owned, lang]);
+
+    // Missions: runs / score / combo (only if run wasn't quit early — Zen quits use gameOverNow too, we still count)
+    bumpMissionRef.current("runs", 1);
+    if (finalMode === "blitz") bumpMissionRef.current("blitzRuns", 1, "blitz");
+    bumpMissionRef.current("score", finalScore);
+    if (finalMode === "hardcore") bumpMissionRef.current("hardcoreScore", finalScore, "hardcore");
+    bumpMissionRef.current("combo", finalCombo);
+
+    // Leaderboard submit if signed in
+    if (user && finalScore > 0) {
+      submitScoreFn({ data: {
+        mode: finalMode,
+        score: finalScore,
+        display_name: prog.displayName ?? user.email?.split("@")[0] ?? null,
+        equipped_skin: prog.equipped,
+      } }).catch(() => { /* noop */ });
+    }
+  }, [prog.owned, prog.displayName, prog.equipped, lang, user, submitScoreFn]);
+
 
   // Main loop
   useEffect(() => {
@@ -385,7 +449,7 @@ export default function NeonRush() {
       audioRef.current.gameover();
       const fs = Math.floor(s.score);
       setScore(fs); setGameOver(true); setRunning(false);
-      finishRun(fs, s.mode);
+      finishRun(fs, s.mode, s.maxCombo);
     };
 
     const loop = (now: number) => {
@@ -452,17 +516,19 @@ export default function NeonRush() {
           const rr = (e.r + s.player.r) ** 2;
           if (dist2(e, s.player) < rr) {
             if (e.kind === "orb") {
-              s.combo++; s.comboTimer = 1800;
+              s.combo++; s.comboTimer = 1800; if (s.combo > s.maxCombo) s.maxCombo = s.combo;
               const mul = s.powers.x2 > 0 ? 2 : 1;
               const gain = (10 + s.combo * 2) * mul;
               s.score += gain; setScore(Math.floor(s.score)); setCombo(s.combo);
               audioRef.current.pickup(s.combo);
               burst(e.x, e.y, "#7bf3ff", 18, 1);
               s.entities.splice(i, 1);
+              bumpMissionRef.current("orbs", 1);
             } else if (e.kind === "power" && e.power) {
               s.powers[e.power] = 6000; setPowers({ ...s.powers });
               audioRef.current.power(); burst(e.x, e.y, "#fff17a", 40, 1.4);
               s.entities.splice(i, 1);
+              bumpMissionRef.current("powers", 1);
             } else if (e.kind === "hazard") {
               if (s.powers.shield > 0) {
                 s.powers.shield = 0; setPowers({ ...s.powers });
@@ -604,7 +670,9 @@ export default function NeonRush() {
     setProg((p) => {
       let np = { ...p, claimed: [...p.claimed, i] };
       if (reward.type === "coins") np = { ...np, coins: np.coins + (reward.value as number) };
-      else {
+      else if (reward.type === "xp") np = { ...np, xp: np.xp + (reward.value as number) };
+      else if (reward.type === "chest") np = { ...np, coins: np.coins + 200 * (reward.value as number) };
+      else if (reward.type === "skin") {
         const sk = reward.value as SkinId;
         if (!np.owned.includes(sk)) np = { ...np, owned: [...np.owned, sk] };
       }
@@ -615,6 +683,7 @@ export default function NeonRush() {
 
   const buySkin = (id: SkinId) => {
     const sk = SKINS.find((s) => s.id === id)!;
+    if (sk.passOnly) return;
     if (prog.owned.includes(id)) return;
     if (prog.coins < sk.price) { showToast(tr("notEnough")); return; }
     setProg((p) => ({ ...p, coins: p.coins - sk.price, owned: [...p.owned, id] }));
@@ -626,7 +695,7 @@ export default function NeonRush() {
   };
   const openChest = () => {
     if (prog.coins < 250) { showToast(tr("notEnough")); return; }
-    const unowned = SKINS.filter((s) => !prog.owned.includes(s.id));
+    const unowned = SKINS.filter((s) => !prog.owned.includes(s.id) && !s.passOnly);
     setProg((p) => {
       let np = { ...p, coins: p.coins - 250 };
       if (unowned.length > 0 && Math.random() < 0.6) {
@@ -641,6 +710,47 @@ export default function NeonRush() {
       return np;
     });
   };
+
+  const claimMission = (id: string) => {
+    const tpl = findTemplate(id); if (!tpl) return;
+    setProg((p) => {
+      const done = (m: { id: string; progress: number; claimed: boolean }) => m.id === id && !m.claimed && m.progress >= tpl.target;
+      const dailyHit = p.missions.daily.list.some(done);
+      const weeklyHit = p.missions.weekly.list.some(done);
+      if (!dailyHit && !weeklyHit) return p;
+      const upd = (list: typeof p.missions.daily.list) => list.map((m) => (done(m) ? { ...m, claimed: true } : m));
+      return {
+        ...p, coins: p.coins + tpl.coins, xp: p.xp + tpl.xp,
+        missions: {
+          daily: { ...p.missions.daily, list: upd(p.missions.daily.list) },
+          weekly: { ...p.missions.weekly, list: upd(p.missions.weekly.list) },
+        },
+      };
+    });
+    showToast(`+${tpl.coins} 🪙 · +${tpl.xp} XP`);
+  };
+
+  // Leaderboard: load + realtime when panel open
+  useEffect(() => {
+    if (panel !== "leaderboard") return;
+    let cancel = false;
+    const load = async () => {
+      setLbLoading(true);
+      try {
+        const [rows, mine] = await Promise.all([
+          fetchLbFn({ data: { mode: lbMode } }),
+          user ? fetchRankFn({ data: { mode: lbMode } }) : Promise.resolve(null),
+        ]);
+        if (!cancel) { setLbRows(rows as LbRow[]); setMyRank(mine as { score: number; rank: number | null; total: number } | null); }
+      } finally { if (!cancel) setLbLoading(false); }
+    };
+    load();
+    const ch = supabase
+      .channel(`lb-${lbMode}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "leaderboard_scores", filter: `mode=eq.${lbMode}` }, () => load())
+      .subscribe();
+    return () => { cancel = true; supabase.removeChannel(ch); };
+  }, [panel, lbMode, user, fetchLbFn, fetchRankFn]);
 
   const activePowers = (Object.keys(powers) as Array<keyof typeof powers>).filter((k) => powers[k] > 0);
   const powerKeyMap: Record<string, string> = { shield: "shield", slow: "slow", magnet: "magnet", x2: "x2" };
@@ -778,8 +888,10 @@ export default function NeonRush() {
               <button onClick={() => setPanel("modes")} className="panel-neon rounded-lg py-2 text-glow-cyan hover:scale-105 transition">{tr("mode")}</button>
               <button onClick={() => setPanel("skins")} className="panel-neon rounded-lg py-2 text-glow-magenta hover:scale-105 transition">{tr("skins")}</button>
               <button onClick={() => setPanel("pass")} className="panel-neon rounded-lg py-2 text-glow-yellow hover:scale-105 transition">{tr("pass")}</button>
+              <button onClick={() => setPanel("missions")} className="panel-neon rounded-lg py-2 text-glow-cyan hover:scale-105 transition">{tr("missions")}</button>
+              <button onClick={() => setPanel("leaderboard")} className="panel-neon rounded-lg py-2 text-glow-yellow hover:scale-105 transition">🌍 {tr("leaderboard")}</button>
               <button onClick={() => setPanel("ranked")} className="panel-neon rounded-lg py-2 text-glow-cyan hover:scale-105 transition">{tr("ranked")}</button>
-              <button onClick={() => setPanel("settings")} className="panel-neon rounded-lg py-2 text-glow-magenta hover:scale-105 transition col-span-2 sm:col-span-1">{tr("settings")}</button>
+              <button onClick={() => setPanel("settings")} className="panel-neon rounded-lg py-2 text-glow-magenta hover:scale-105 transition col-span-2 sm:col-span-3">{tr("settings")}</button>
             </div>
 
             <div className="mt-5 grid grid-cols-2 gap-2 text-left text-[10px] uppercase tracking-[0.15em] text-muted-foreground">
@@ -850,17 +962,24 @@ export default function NeonRush() {
                   <div className="mt-1 h-2 w-full rounded-full bg-black/40 overflow-hidden">
                     <div className="h-full bg-gradient-to-r from-[color:var(--neon-cyan)] to-[color:var(--neon-magenta)]" style={{ width: `${passProgressPct}%` }} />
                   </div>
+                  <div className="mt-2 text-[10px] uppercase tracking-[0.2em] text-muted-foreground text-center">{tr("passTier100")}</div>
                 </div>
                 <div className="grid grid-cols-2 gap-2 max-h-[50vh] overflow-y-auto">
                   {PASS_REWARDS.map((r, i) => {
                     const unlocked = i < passTier;
                     const claimed = prog.claimed.includes(i);
+                    const isFinal = i === PASS_TIERS - 1;
+                    const label =
+                      r.type === "coins" ? `${r.value} 🪙` :
+                      r.type === "xp" ? `+${r.value} XP` :
+                      r.type === "chest" ? `🎁 ×${r.value}` :
+                      `✨ ${r.value}`;
                     return (
-                      <div key={i} className={`rounded-xl border p-3 text-center ${unlocked ? "border-[color:var(--neon-cyan)]/60 bg-[color:var(--neon-cyan)]/10" : "border-border/40 bg-black/20 opacity-60"}`}>
-                        <div className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">{tr("tier")} {i + 1}</div>
-                        <div className="mt-1 font-display text-sm font-bold text-glow-yellow">
-                          {r.type === "coins" ? `${r.value} 🪙` : `✨ ${r.value}`}
+                      <div key={i} className={`rounded-xl border p-3 text-center ${isFinal ? "border-[color:var(--neon-magenta)] bg-[color:var(--neon-magenta)]/10" : unlocked ? "border-[color:var(--neon-cyan)]/60 bg-[color:var(--neon-cyan)]/10" : "border-border/40 bg-black/20 opacity-60"}`}>
+                        <div className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+                          {tr("tier")} {i + 1}{isFinal ? ` · ${tr("exclusive")}` : ""}
                         </div>
+                        <div className="mt-1 font-display text-sm font-bold text-glow-yellow">{label}</div>
                         <button onClick={() => claimTier(i)} disabled={!unlocked || claimed} className={`mt-2 w-full rounded-lg px-2 py-1 text-[10px] font-bold uppercase tracking-widest ${claimed ? "bg-black/30 text-muted-foreground" : unlocked ? "bg-[color:var(--neon-magenta)]/20 text-glow-magenta hover:scale-105 transition" : "bg-black/30 text-muted-foreground"}`}>
                           {claimed ? tr("claimed") : unlocked ? tr("claim") : tr("locked")}
                         </button>
@@ -870,6 +989,78 @@ export default function NeonRush() {
                 </div>
               </div>
             )}
+
+            {panel === "missions" && (
+              <div className="space-y-4 max-h-[65vh] overflow-y-auto">
+                {(["daily", "weekly"] as const).map((bucket) => (
+                  <div key={bucket}>
+                    <div className="mb-2 text-xs uppercase tracking-[0.3em] text-glow-cyan">{tr(bucket)}</div>
+                    <div className="space-y-2">
+                      {prog.missions[bucket].list.map((m) => {
+                        const tpl = findTemplate(m.id); if (!tpl) return null;
+                        const pct = Math.min(100, (m.progress / tpl.target) * 100);
+                        const ready = m.progress >= tpl.target && !m.claimed;
+                        return (
+                          <div key={m.id} className="rounded-xl border border-border/50 bg-black/30 p-3">
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="text-xs font-bold uppercase tracking-widest text-glow-cyan">{tr(tpl.titleKey)}</div>
+                              <div className="text-[10px] uppercase tracking-[0.2em] text-glow-yellow whitespace-nowrap">+{tpl.coins}🪙 · +{tpl.xp}XP</div>
+                            </div>
+                            <div className="mt-2 h-2 w-full rounded-full bg-black/40 overflow-hidden">
+                              <div className="h-full bg-gradient-to-r from-[color:var(--neon-cyan)] to-[color:var(--neon-magenta)]" style={{ width: `${pct}%` }} />
+                            </div>
+                            <div className="mt-1 flex items-center justify-between text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+                              <span>{Math.floor(m.progress)}/{tpl.target}</span>
+                              <button onClick={() => claimMission(m.id)} disabled={!ready} className={`rounded-lg px-2 py-1 font-bold ${m.claimed ? "bg-black/30 text-muted-foreground" : ready ? "bg-[color:var(--neon-magenta)]/20 text-glow-magenta hover:scale-105 transition" : "bg-black/30 text-muted-foreground"}`}>
+                                {m.claimed ? tr("claimed") : ready ? tr("claim") : tr("locked")}
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {panel === "leaderboard" && (
+              <div>
+                <div className="mb-3 grid grid-cols-4 gap-1 text-[10px] uppercase tracking-[0.2em]">
+                  {MODES.map((m) => (
+                    <button key={m.id} onClick={() => setLbMode(m.id)} className={`rounded-lg py-2 font-bold ${lbMode === m.id ? "bg-[color:var(--neon-cyan)]/20 text-glow-cyan" : "bg-black/30 text-muted-foreground"}`}>
+                      {tr(m.nameKey)}
+                    </button>
+                  ))}
+                </div>
+                {!user && <div className="mb-2 text-center text-[10px] uppercase tracking-[0.2em] text-glow-magenta">{tr("signInToRank")}</div>}
+                {myRank && (
+                  <div className="mb-3 rounded-xl border border-[color:var(--neon-magenta)]/60 bg-[color:var(--neon-magenta)]/10 p-3 text-center">
+                    <div className="text-[10px] uppercase tracking-[0.3em] text-muted-foreground">{tr("myRank")}</div>
+                    <div className="font-display text-2xl font-black text-glow-magenta">#{myRank.rank ?? "—"} <span className="text-sm text-muted-foreground">/ {myRank.total}</span></div>
+                    <div className="text-[10px] uppercase tracking-[0.2em] text-glow-yellow">{myRank.score} pts</div>
+                  </div>
+                )}
+                <div className="text-[10px] uppercase tracking-[0.2em] text-glow-cyan text-center mb-2">🌍 {tr("top100")} · <span className="text-glow-yellow">● {tr("liveUpdates")}</span></div>
+                <div className="space-y-1 max-h-[45vh] overflow-y-auto">
+                  {lbLoading && lbRows.length === 0 && <div className="text-center text-xs text-muted-foreground py-4">…</div>}
+                  {lbRows.map((row, idx) => {
+                    const isMe = user?.id === row.user_id;
+                    return (
+                      <div key={row.user_id} className={`flex items-center justify-between rounded-lg border px-3 py-2 ${isMe ? "border-[color:var(--neon-cyan)] bg-[color:var(--neon-cyan)]/10" : "border-border/40 bg-black/20"}`}>
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className={`font-display font-black text-sm w-8 ${idx === 0 ? "text-glow-yellow" : idx < 3 ? "text-glow-magenta" : "text-muted-foreground"}`}>#{idx + 1}</span>
+                          <span className="text-xs font-bold uppercase tracking-widest truncate">{row.display_name || "Anon"}</span>
+                        </div>
+                        <span className="font-display font-black text-glow-cyan tabular-nums">{row.score}</span>
+                      </div>
+                    );
+                  })}
+                  {!lbLoading && lbRows.length === 0 && <div className="text-center text-xs text-muted-foreground py-4">—</div>}
+                </div>
+              </div>
+            )}
+
 
             {panel === "ranked" && (
               <div className="space-y-2">

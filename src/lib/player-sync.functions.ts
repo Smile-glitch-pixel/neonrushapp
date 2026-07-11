@@ -14,7 +14,7 @@ const StateSchema = z.object({
     zen: z.number().int().min(0),
     blitz: z.number().int().min(0),
   }),
-  settings: z.record(z.string(), z.unknown()).optional(),
+  settings: z.record(z.string(), z.any()).optional(),
 });
 
 export const pullPlayerState = createServerFn({ method: "GET" })
