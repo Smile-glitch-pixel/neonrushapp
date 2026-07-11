@@ -711,6 +711,47 @@ export default function NeonRush() {
     });
   };
 
+  const claimMission = (id: string) => {
+    const tpl = findTemplate(id); if (!tpl) return;
+    setProg((p) => {
+      const done = (m: { id: string; progress: number; claimed: boolean }) => m.id === id && !m.claimed && m.progress >= tpl.target;
+      const dailyHit = p.missions.daily.list.some(done);
+      const weeklyHit = p.missions.weekly.list.some(done);
+      if (!dailyHit && !weeklyHit) return p;
+      const upd = (list: typeof p.missions.daily.list) => list.map((m) => (done(m) ? { ...m, claimed: true } : m));
+      return {
+        ...p, coins: p.coins + tpl.coins, xp: p.xp + tpl.xp,
+        missions: {
+          daily: { ...p.missions.daily, list: upd(p.missions.daily.list) },
+          weekly: { ...p.missions.weekly, list: upd(p.missions.weekly.list) },
+        },
+      };
+    });
+    showToast(`+${tpl.coins} 🪙 · +${tpl.xp} XP`);
+  };
+
+  // Leaderboard: load + realtime when panel open
+  useEffect(() => {
+    if (panel !== "leaderboard") return;
+    let cancel = false;
+    const load = async () => {
+      setLbLoading(true);
+      try {
+        const [rows, mine] = await Promise.all([
+          fetchLbFn({ data: { mode: lbMode } }),
+          user ? fetchRankFn({ data: { mode: lbMode } }) : Promise.resolve(null),
+        ]);
+        if (!cancel) { setLbRows(rows as LbRow[]); setMyRank(mine as { score: number; rank: number | null; total: number } | null); }
+      } finally { if (!cancel) setLbLoading(false); }
+    };
+    load();
+    const ch = supabase
+      .channel(`lb-${lbMode}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "leaderboard_scores", filter: `mode=eq.${lbMode}` }, () => load())
+      .subscribe();
+    return () => { cancel = true; supabase.removeChannel(ch); };
+  }, [panel, lbMode, user, fetchLbFn, fetchRankFn]);
+
   const activePowers = (Object.keys(powers) as Array<keyof typeof powers>).filter((k) => powers[k] > 0);
   const powerKeyMap: Record<string, string> = { shield: "shield", slow: "slow", magnet: "magnet", x2: "x2" };
   const powerColor: Record<string, string> = { shield: "text-glow-cyan", slow: "text-glow-magenta", magnet: "text-glow-yellow", x2: "text-glow-yellow" };
