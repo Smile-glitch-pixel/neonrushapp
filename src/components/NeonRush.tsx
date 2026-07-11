@@ -449,7 +449,7 @@ export default function NeonRush() {
       audioRef.current.gameover();
       const fs = Math.floor(s.score);
       setScore(fs); setGameOver(true); setRunning(false);
-      finishRun(fs, s.mode);
+      finishRun(fs, s.mode, s.maxCombo);
     };
 
     const loop = (now: number) => {
