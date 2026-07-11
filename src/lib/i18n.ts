@@ -179,6 +179,8 @@ const DICT: Record<Lang, Dict> = {
     notEnough: "Monedas insuficientes",
     passProgress: "Progreso del pase",
     quit: "Salir",
+    signIn: "Iniciar sesión",
+    signOut: "Cerrar sesión",
   },
 };
 
