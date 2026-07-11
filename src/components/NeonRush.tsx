@@ -962,17 +962,24 @@ export default function NeonRush() {
                   <div className="mt-1 h-2 w-full rounded-full bg-black/40 overflow-hidden">
                     <div className="h-full bg-gradient-to-r from-[color:var(--neon-cyan)] to-[color:var(--neon-magenta)]" style={{ width: `${passProgressPct}%` }} />
                   </div>
+                  <div className="mt-2 text-[10px] uppercase tracking-[0.2em] text-muted-foreground text-center">{tr("passTier100")}</div>
                 </div>
                 <div className="grid grid-cols-2 gap-2 max-h-[50vh] overflow-y-auto">
                   {PASS_REWARDS.map((r, i) => {
                     const unlocked = i < passTier;
                     const claimed = prog.claimed.includes(i);
+                    const isFinal = i === PASS_TIERS - 1;
+                    const label =
+                      r.type === "coins" ? `${r.value} 🪙` :
+                      r.type === "xp" ? `+${r.value} XP` :
+                      r.type === "chest" ? `🎁 ×${r.value}` :
+                      `✨ ${r.value}`;
                     return (
-                      <div key={i} className={`rounded-xl border p-3 text-center ${unlocked ? "border-[color:var(--neon-cyan)]/60 bg-[color:var(--neon-cyan)]/10" : "border-border/40 bg-black/20 opacity-60"}`}>
-                        <div className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">{tr("tier")} {i + 1}</div>
-                        <div className="mt-1 font-display text-sm font-bold text-glow-yellow">
-                          {r.type === "coins" ? `${r.value} 🪙` : `✨ ${r.value}`}
+                      <div key={i} className={`rounded-xl border p-3 text-center ${isFinal ? "border-[color:var(--neon-magenta)] bg-[color:var(--neon-magenta)]/10" : unlocked ? "border-[color:var(--neon-cyan)]/60 bg-[color:var(--neon-cyan)]/10" : "border-border/40 bg-black/20 opacity-60"}`}>
+                        <div className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+                          {tr("tier")} {i + 1}{isFinal ? ` · ${tr("exclusive")}` : ""}
                         </div>
+                        <div className="mt-1 font-display text-sm font-bold text-glow-yellow">{label}</div>
                         <button onClick={() => claimTier(i)} disabled={!unlocked || claimed} className={`mt-2 w-full rounded-lg px-2 py-1 text-[10px] font-bold uppercase tracking-widest ${claimed ? "bg-black/30 text-muted-foreground" : unlocked ? "bg-[color:var(--neon-magenta)]/20 text-glow-magenta hover:scale-105 transition" : "bg-black/30 text-muted-foreground"}`}>
                           {claimed ? tr("claimed") : unlocked ? tr("claim") : tr("locked")}
                         </button>
@@ -982,6 +989,78 @@ export default function NeonRush() {
                 </div>
               </div>
             )}
+
+            {panel === "missions" && (
+              <div className="space-y-4 max-h-[65vh] overflow-y-auto">
+                {(["daily", "weekly"] as const).map((bucket) => (
+                  <div key={bucket}>
+                    <div className="mb-2 text-xs uppercase tracking-[0.3em] text-glow-cyan">{tr(bucket)}</div>
+                    <div className="space-y-2">
+                      {prog.missions[bucket].list.map((m) => {
+                        const tpl = findTemplate(m.id); if (!tpl) return null;
+                        const pct = Math.min(100, (m.progress / tpl.target) * 100);
+                        const ready = m.progress >= tpl.target && !m.claimed;
+                        return (
+                          <div key={m.id} className="rounded-xl border border-border/50 bg-black/30 p-3">
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="text-xs font-bold uppercase tracking-widest text-glow-cyan">{tr(tpl.titleKey)}</div>
+                              <div className="text-[10px] uppercase tracking-[0.2em] text-glow-yellow whitespace-nowrap">+{tpl.coins}🪙 · +{tpl.xp}XP</div>
+                            </div>
+                            <div className="mt-2 h-2 w-full rounded-full bg-black/40 overflow-hidden">
+                              <div className="h-full bg-gradient-to-r from-[color:var(--neon-cyan)] to-[color:var(--neon-magenta)]" style={{ width: `${pct}%` }} />
+                            </div>
+                            <div className="mt-1 flex items-center justify-between text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+                              <span>{Math.floor(m.progress)}/{tpl.target}</span>
+                              <button onClick={() => claimMission(m.id)} disabled={!ready} className={`rounded-lg px-2 py-1 font-bold ${m.claimed ? "bg-black/30 text-muted-foreground" : ready ? "bg-[color:var(--neon-magenta)]/20 text-glow-magenta hover:scale-105 transition" : "bg-black/30 text-muted-foreground"}`}>
+                                {m.claimed ? tr("claimed") : ready ? tr("claim") : tr("locked")}
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {panel === "leaderboard" && (
+              <div>
+                <div className="mb-3 grid grid-cols-4 gap-1 text-[10px] uppercase tracking-[0.2em]">
+                  {MODES.map((m) => (
+                    <button key={m.id} onClick={() => setLbMode(m.id)} className={`rounded-lg py-2 font-bold ${lbMode === m.id ? "bg-[color:var(--neon-cyan)]/20 text-glow-cyan" : "bg-black/30 text-muted-foreground"}`}>
+                      {tr(m.nameKey)}
+                    </button>
+                  ))}
+                </div>
+                {!user && <div className="mb-2 text-center text-[10px] uppercase tracking-[0.2em] text-glow-magenta">{tr("signInToRank")}</div>}
+                {myRank && (
+                  <div className="mb-3 rounded-xl border border-[color:var(--neon-magenta)]/60 bg-[color:var(--neon-magenta)]/10 p-3 text-center">
+                    <div className="text-[10px] uppercase tracking-[0.3em] text-muted-foreground">{tr("myRank")}</div>
+                    <div className="font-display text-2xl font-black text-glow-magenta">#{myRank.rank ?? "—"} <span className="text-sm text-muted-foreground">/ {myRank.total}</span></div>
+                    <div className="text-[10px] uppercase tracking-[0.2em] text-glow-yellow">{myRank.score} pts</div>
+                  </div>
+                )}
+                <div className="text-[10px] uppercase tracking-[0.2em] text-glow-cyan text-center mb-2">🌍 {tr("top100")} · <span className="text-glow-yellow">● {tr("liveUpdates")}</span></div>
+                <div className="space-y-1 max-h-[45vh] overflow-y-auto">
+                  {lbLoading && lbRows.length === 0 && <div className="text-center text-xs text-muted-foreground py-4">…</div>}
+                  {lbRows.map((row, idx) => {
+                    const isMe = user?.id === row.user_id;
+                    return (
+                      <div key={row.user_id} className={`flex items-center justify-between rounded-lg border px-3 py-2 ${isMe ? "border-[color:var(--neon-cyan)] bg-[color:var(--neon-cyan)]/10" : "border-border/40 bg-black/20"}`}>
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className={`font-display font-black text-sm w-8 ${idx === 0 ? "text-glow-yellow" : idx < 3 ? "text-glow-magenta" : "text-muted-foreground"}`}>#{idx + 1}</span>
+                          <span className="text-xs font-bold uppercase tracking-widest truncate">{row.display_name || "Anon"}</span>
+                        </div>
+                        <span className="font-display font-black text-glow-cyan tabular-nums">{row.score}</span>
+                      </div>
+                    );
+                  })}
+                  {!lbLoading && lbRows.length === 0 && <div className="text-center text-xs text-muted-foreground py-4">—</div>}
+                </div>
+              </div>
+            )}
+
 
             {panel === "ranked" && (
               <div className="space-y-2">
