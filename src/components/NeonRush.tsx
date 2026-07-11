@@ -148,15 +148,64 @@ export default function NeonRush() {
   const [toast, setToast] = useState<string>("");
   const [panel, setPanel] = useState<null | "modes" | "skins" | "pass" | "ranked" | "settings">(null);
   const [powers, setPowers] = useState<{ shield: number; slow: number; magnet: number; x2: number }>({ shield: 0, slow: 0, magnet: 0, x2: 0 });
+  const [user, setUser] = useState<{ id: string; email: string | null } | null>(null);
+  const [hydrated, setHydrated] = useState(false);
+  const pullFn = useServerFn(pullPlayerState);
+  const pushFn = useServerFn(pushPlayerState);
+  const pushTimer = useRef<number | null>(null);
 
   // Hydration-safe: load lang and prog after mount
   useEffect(() => {
     const l = (localStorage.getItem(LANG_KEY) as Lang) || (navigator.language.startsWith("es") ? "es" : navigator.language.startsWith("fr") ? "fr" : "en");
     setLang(l);
     setProg(loadProg());
+    setHydrated(true);
   }, []);
   useEffect(() => { try { localStorage.setItem(LANG_KEY, lang); } catch { /* noop */ } }, [lang]);
-  useEffect(() => { saveProg(prog); }, [prog]);
+  useEffect(() => { if (hydrated) saveProg(prog); }, [prog, hydrated]);
+
+  // Auth: track session
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => {
+      const s = data.session;
+      setUser(s ? { id: s.user.id, email: s.user.email ?? null } : null);
+    });
+    const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => {
+      setUser(s ? { id: s.user.id, email: s.user.email ?? null } : null);
+    });
+    return () => { sub.subscription.unsubscribe(); };
+  }, []);
+
+  // On login: pull remote → merge → push merged back
+  useEffect(() => {
+    if (!user || !hydrated) return;
+    let cancel = false;
+    (async () => {
+      try {
+        const remote = await pullFn();
+        if (cancel) return;
+        setProg((local) => {
+          const merged = mergeProg(local, remote as never);
+          pushFn({ data: progToRemote(merged) }).catch(() => { /* noop */ });
+          return merged;
+        });
+      } catch { /* noop */ }
+    })();
+    return () => { cancel = true; };
+  }, [user, hydrated, pullFn, pushFn]);
+
+  // Debounced push on prog changes when signed-in
+  useEffect(() => {
+    if (!user || !hydrated) return;
+    if (pushTimer.current) window.clearTimeout(pushTimer.current);
+    pushTimer.current = window.setTimeout(() => {
+      pushFn({ data: progToRemote(prog) }).catch(() => { /* noop */ });
+    }, 900);
+    return () => { if (pushTimer.current) window.clearTimeout(pushTimer.current); };
+  }, [prog, user, hydrated, pushFn]);
+
+  const signOut = async () => { await supabase.auth.signOut(); };
+
 
   const tr = useCallback((k: string) => t(lang, k), [lang]);
 
