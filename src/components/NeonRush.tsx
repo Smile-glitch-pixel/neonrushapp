@@ -174,6 +174,42 @@ export default function NeonRush() {
   useEffect(() => { try { localStorage.setItem(LANG_KEY, lang); } catch { /* noop */ } }, [lang]);
   useEffect(() => { if (hydrated) saveProg(prog); }, [prog, hydrated]);
 
+  // Refresh missions when day/week rolls over (checked every minute)
+  useEffect(() => {
+    if (!hydrated) return;
+    const tick = () => setProg((p) => {
+      const next = refreshMissionsIfNeeded(p.missions);
+      if (next === p.missions) return p;
+      return { ...p, missions: next };
+    });
+    const id = window.setInterval(tick, 60_000);
+    return () => window.clearInterval(id);
+  }, [hydrated]);
+
+  // Mission progress incrementer
+  const bumpMission = useCallback((stat: MissionStat, delta: number, forMode?: GameMode) => {
+    setProg((p) => {
+      const bump = (list: typeof p.missions.daily.list) => list.map((m) => {
+        if (m.claimed) return m;
+        const tpl = findTemplate(m.id);
+        if (!tpl || tpl.stat !== stat) return m;
+        if (stat === "blitzRuns" && forMode !== "blitz") return m;
+        if (stat === "hardcoreScore" && forMode !== "hardcore") return m;
+        return { ...m, progress: Math.min(tpl.target, m.progress + delta) };
+      });
+      return {
+        ...p,
+        missions: {
+          daily: { ...p.missions.daily, list: bump(p.missions.daily.list) },
+          weekly: { ...p.missions.weekly, list: bump(p.missions.weekly.list) },
+        },
+      };
+    });
+  }, []);
+  const bumpMissionRef = useRef(bumpMission);
+  useEffect(() => { bumpMissionRef.current = bumpMission; }, [bumpMission]);
+
+
   // Auth: track session
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
