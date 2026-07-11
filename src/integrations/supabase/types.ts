@@ -14,6 +14,39 @@ export type Database = {
   }
   public: {
     Tables: {
+      leaderboard_scores: {
+        Row: {
+          created_at: string
+          display_name: string | null
+          equipped_skin: string | null
+          id: string
+          mode: string
+          score: number
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          display_name?: string | null
+          equipped_skin?: string | null
+          id?: string
+          mode: string
+          score?: number
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          display_name?: string | null
+          equipped_skin?: string | null
+          id?: string
+          mode?: string
+          score?: number
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       player_state: {
         Row: {
           best_by_mode: Json
