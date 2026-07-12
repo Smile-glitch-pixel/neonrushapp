@@ -186,16 +186,23 @@ export default function NeonRush() {
     return () => window.clearInterval(id);
   }, [hydrated]);
 
-  // Mission progress incrementer
-  const bumpMission = useCallback((stat: MissionStat, delta: number, forMode?: GameMode) => {
+  // Apply a finished run's stats to missions.
+  // Per-run stats (orbs, powers, score, combo, hardcoreScore) use MAX(progress, thisRun)
+  // so a mission target must be reached WITHIN A SINGLE RUN — not by adding up runs.
+  // Cumulative stats (runs, blitzRuns) still add across the day/week.
+  const applyRunToMissions = useCallback((runStats: Partial<Record<MissionStat, number>>, finalMode: GameMode) => {
     setProg((p) => {
       const bump = (list: typeof p.missions.daily.list) => list.map((m) => {
         if (m.claimed) return m;
         const tpl = findTemplate(m.id);
-        if (!tpl || tpl.stat !== stat) return m;
-        if (stat === "blitzRuns" && forMode !== "blitz") return m;
-        if (stat === "hardcoreScore" && forMode !== "hardcore") return m;
-        return { ...m, progress: Math.min(tpl.target, m.progress + delta) };
+        if (!tpl) return m;
+        const v = runStats[tpl.stat];
+        if (v == null || v <= 0) return m;
+        if (tpl.stat === "blitzRuns" && finalMode !== "blitz") return m;
+        if (tpl.stat === "hardcoreScore" && finalMode !== "hardcore") return m;
+        const cumulative = tpl.stat === "runs" || tpl.stat === "blitzRuns";
+        const next = cumulative ? m.progress + v : Math.max(m.progress, v);
+        return { ...m, progress: Math.min(tpl.target, next) };
       });
       return {
         ...p,
@@ -206,8 +213,8 @@ export default function NeonRush() {
       };
     });
   }, []);
-  const bumpMissionRef = useRef(bumpMission);
-  useEffect(() => { bumpMissionRef.current = bumpMission; }, [bumpMission]);
+  const applyRunRef = useRef(applyRunToMissions);
+  useEffect(() => { applyRunRef.current = applyRunToMissions; }, [applyRunToMissions]);
 
 
   // Auth: track session
@@ -272,6 +279,7 @@ export default function NeonRush() {
     mode: "classic" as GameMode,
     skinColors: equippedSkin.colors as [string, string, string],
     duration: 0,
+    runOrbs: 0, runPowers: 0,
   });
 
   const start = useCallback(async (m: GameMode) => {
@@ -282,6 +290,7 @@ export default function NeonRush() {
     s.player.tx = s.player.x; s.player.ty = s.player.y; s.player.trail = [];
     s.t = 0; s.lastSpawn = 0; s.lastPower = 0;
     s.combo = 0; s.comboTimer = 0; s.score = 0; s.shake = 0; s.maxCombo = 0;
+    s.runOrbs = 0; s.runPowers = 0;
     s.powers = { shield: 0, slow: 0, magnet: 0, x2: 0 };
     s.over = false; s.running = true; s.difficulty = m === "hardcore" ? 1.5 : 1;
     s.mode = m;
@@ -383,11 +392,17 @@ export default function NeonRush() {
     if (droppedSkin && !prog.owned.includes(droppedSkin)) showToast(`${t(lang, "newSkin")} ${SKINS.find((s) => s.id === droppedSkin)?.name}`);
 
     // Missions: runs / score / combo (only if run wasn't quit early — Zen quits use gameOverNow too, we still count)
-    bumpMissionRef.current("runs", 1);
-    if (finalMode === "blitz") bumpMissionRef.current("blitzRuns", 1, "blitz");
-    bumpMissionRef.current("score", finalScore);
-    if (finalMode === "hardcore") bumpMissionRef.current("hardcoreScore", finalScore, "hardcore");
-    bumpMissionRef.current("combo", finalCombo);
+    // Missions — everything counts WITHIN THIS RUN (per-run max), except runs/blitzRuns which stay cumulative
+    const s = stateRef.current;
+    applyRunRef.current({
+      runs: 1,
+      blitzRuns: finalMode === "blitz" ? 1 : 0,
+      score: finalScore,
+      hardcoreScore: finalMode === "hardcore" ? finalScore : 0,
+      combo: finalCombo,
+      orbs: s.runOrbs || 0,
+      powers: s.runPowers || 0,
+    }, finalMode);
 
     // Leaderboard submit if signed in
     if (user && finalScore > 0) {
@@ -523,12 +538,12 @@ export default function NeonRush() {
               audioRef.current.pickup(s.combo);
               burst(e.x, e.y, "#7bf3ff", 18, 1);
               s.entities.splice(i, 1);
-              bumpMissionRef.current("orbs", 1);
+              s.runOrbs++;
             } else if (e.kind === "power" && e.power) {
               s.powers[e.power] = 6000; setPowers({ ...s.powers });
               audioRef.current.power(); burst(e.x, e.y, "#fff17a", 40, 1.4);
               s.entities.splice(i, 1);
-              bumpMissionRef.current("powers", 1);
+              s.runPowers++;
             } else if (e.kind === "hazard") {
               if (s.powers.shield > 0) {
                 s.powers.shield = 0; setPowers({ ...s.powers });
