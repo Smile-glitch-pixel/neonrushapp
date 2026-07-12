@@ -378,26 +378,16 @@ export default function NeonRush() {
     return () => window.removeEventListener("resize", resize);
   }, []);
 
-  // End-of-run rewards
+  // End-of-run rewards. Skins are NO LONGER dropped from runs — chests + shop + BP only.
   const finishRun = useCallback((finalScore: number, finalMode: GameMode, finalCombo: number) => {
     const mult = REWARD_MULT[finalMode] ?? 1;
     const earnedCoins = Math.floor((finalScore / 10) * mult);
     const earnedXP = Math.floor((finalScore / 6) * mult);
-    // Skin drop chance — exclude legendary AND passOnly (exclusive)
-    const dropChance = Math.min(0.25, (finalScore / 20000) * mult);
-    let droppedSkin: SkinId | undefined;
-    if (Math.random() < dropChance) {
-      const unowned = SKINS.filter((s) => s.rarity !== "legendary" && !s.passOnly);
-      const pick = unowned[Math.floor(Math.random() * unowned.length)];
-      if (pick) droppedSkin = pick.id;
-    }
     setProg((p) => {
-      const owned = droppedSkin && !p.owned.includes(droppedSkin) ? [...p.owned, droppedSkin] : p.owned;
       const bestByMode = { ...p.bestByMode, [finalMode]: Math.max(p.bestByMode[finalMode] || 0, finalScore) };
-      return { ...p, coins: p.coins + earnedCoins, xp: p.xp + earnedXP, owned, bestByMode };
+      return { ...p, coins: p.coins + earnedCoins, xp: p.xp + earnedXP, bestByMode };
     });
-    setRewardEarned({ coins: earnedCoins, xp: earnedXP, skin: droppedSkin && !prog.owned.includes(droppedSkin) ? droppedSkin : undefined });
-    if (droppedSkin && !prog.owned.includes(droppedSkin)) showToast(`${t(lang, "newSkin")} ${SKINS.find((s) => s.id === droppedSkin)?.name}`);
+    setRewardEarned({ coins: earnedCoins, xp: earnedXP });
 
     // Missions: runs / score / combo (only if run wasn't quit early — Zen quits use gameOverNow too, we still count)
     // Missions — everything counts WITHIN THIS RUN (per-run max), except runs/blitzRuns which stay cumulative
