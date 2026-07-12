@@ -5,7 +5,8 @@ import { LANGS, type Lang, t } from "@/lib/i18n";
 import {
   MODES, SKINS, PASS_TIERS, PASS_XP_PER_TIER, PASS_REWARDS, REWARD_MULT, rankFor,
   loadProg, saveProg, defaultProg, refreshMissionsIfNeeded, findTemplate,
-  type GameMode, type Progression, type SkinId, type MissionStat,
+  RARITY_FX, RARITY_COLOR, drawChestSkin, CHEST_COST,
+  type GameMode, type Progression, type SkinId, type MissionStat, type Rarity,
 } from "@/lib/neon-progression";
 import { supabase } from "@/integrations/supabase/client";
 import { pullPlayerState, pushPlayerState } from "@/lib/player-sync.functions";
