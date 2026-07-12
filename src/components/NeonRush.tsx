@@ -290,6 +290,7 @@ export default function NeonRush() {
     s.player.tx = s.player.x; s.player.ty = s.player.y; s.player.trail = [];
     s.t = 0; s.lastSpawn = 0; s.lastPower = 0;
     s.combo = 0; s.comboTimer = 0; s.score = 0; s.shake = 0; s.maxCombo = 0;
+    s.runOrbs = 0; s.runPowers = 0;
     s.powers = { shield: 0, slow: 0, magnet: 0, x2: 0 };
     s.over = false; s.running = true; s.difficulty = m === "hardcore" ? 1.5 : 1;
     s.mode = m;
