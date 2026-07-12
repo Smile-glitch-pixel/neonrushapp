@@ -501,7 +501,7 @@ export default function NeonRush() {
         s.player.x = Math.max(s.player.r, Math.min(s.w - s.player.r, s.player.x));
         s.player.y = Math.max(s.player.r, Math.min(s.h - s.player.r, s.player.y));
         s.player.trail.push({ x: s.player.x, y: s.player.y });
-        if (s.player.trail.length > 22) s.player.trail.shift();
+        if (s.player.trail.length > s.skinFx.trailLen) s.player.trail.shift();
 
         (Object.keys(s.powers) as Array<keyof typeof s.powers>).forEach((k) => { s.powers[k] = Math.max(0, s.powers[k] - dt); });
         s.comboTimer = Math.max(0, s.comboTimer - dt);
