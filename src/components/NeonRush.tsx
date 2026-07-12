@@ -186,16 +186,23 @@ export default function NeonRush() {
     return () => window.clearInterval(id);
   }, [hydrated]);
 
-  // Mission progress incrementer
-  const bumpMission = useCallback((stat: MissionStat, delta: number, forMode?: GameMode) => {
+  // Apply a finished run's stats to missions.
+  // Per-run stats (orbs, powers, score, combo, hardcoreScore) use MAX(progress, thisRun)
+  // so a mission target must be reached WITHIN A SINGLE RUN — not by adding up runs.
+  // Cumulative stats (runs, blitzRuns) still add across the day/week.
+  const applyRunToMissions = useCallback((runStats: Partial<Record<MissionStat, number>>, finalMode: GameMode) => {
     setProg((p) => {
       const bump = (list: typeof p.missions.daily.list) => list.map((m) => {
         if (m.claimed) return m;
         const tpl = findTemplate(m.id);
-        if (!tpl || tpl.stat !== stat) return m;
-        if (stat === "blitzRuns" && forMode !== "blitz") return m;
-        if (stat === "hardcoreScore" && forMode !== "hardcore") return m;
-        return { ...m, progress: Math.min(tpl.target, m.progress + delta) };
+        if (!tpl) return m;
+        const v = runStats[tpl.stat];
+        if (v == null || v <= 0) return m;
+        if (tpl.stat === "blitzRuns" && finalMode !== "blitz") return m;
+        if (tpl.stat === "hardcoreScore" && finalMode !== "hardcore") return m;
+        const cumulative = tpl.stat === "runs" || tpl.stat === "blitzRuns";
+        const next = cumulative ? m.progress + v : Math.max(m.progress, v);
+        return { ...m, progress: Math.min(tpl.target, next) };
       });
       return {
         ...p,
@@ -206,8 +213,8 @@ export default function NeonRush() {
       };
     });
   }, []);
-  const bumpMissionRef = useRef(bumpMission);
-  useEffect(() => { bumpMissionRef.current = bumpMission; }, [bumpMission]);
+  const applyRunRef = useRef(applyRunToMissions);
+  useEffect(() => { applyRunRef.current = applyRunToMissions; }, [applyRunToMissions]);
 
 
   // Auth: track session
