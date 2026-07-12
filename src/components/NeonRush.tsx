@@ -639,10 +639,20 @@ export default function NeonRush() {
         ctx.beginPath(); ctx.arc(s.player.x, s.player.y, pr + 10 + Math.sin(s.t / 100) * 2, 0, Math.PI * 2); ctx.stroke();
       }
       const [c0, c1, c2] = s.skinColors;
-      const pg = ctx.createRadialGradient(s.player.x, s.player.y, 0, s.player.x, s.player.y, pr * 3);
+      const pulse = 1 + Math.sin(s.t / 200) * s.skinFx.pulse;
+      // Mythic/legendary aura ring
+      if (s.skinFx.aura > 0) {
+        const ar = pr * (2.2 + s.skinFx.aura) * pulse;
+        const ag = ctx.createRadialGradient(s.player.x, s.player.y, pr * 0.8, s.player.x, s.player.y, ar);
+        ag.addColorStop(0, `${c1}55`);
+        ag.addColorStop(0.6, `${c1}22`);
+        ag.addColorStop(1, "rgba(0,0,0,0)");
+        ctx.fillStyle = ag; ctx.beginPath(); ctx.arc(s.player.x, s.player.y, ar, 0, Math.PI * 2); ctx.fill();
+      }
+      const pg = ctx.createRadialGradient(s.player.x, s.player.y, 0, s.player.x, s.player.y, pr * 3 * pulse);
       pg.addColorStop(0, c0); pg.addColorStop(0.3, c1); pg.addColorStop(1, "rgba(0,0,0,0)");
-      ctx.fillStyle = pg; ctx.beginPath(); ctx.arc(s.player.x, s.player.y, pr * 3, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = c2; ctx.beginPath(); ctx.arc(s.player.x, s.player.y, pr * 0.9, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = pg; ctx.beginPath(); ctx.arc(s.player.x, s.player.y, pr * 3 * pulse, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = c2; ctx.beginPath(); ctx.arc(s.player.x, s.player.y, pr * 0.9 * pulse, 0, Math.PI * 2); ctx.fill();
       ctx.fillStyle = "#ffffff"; ctx.beginPath(); ctx.arc(s.player.x, s.player.y, pr * 0.5, 0, Math.PI * 2); ctx.fill();
 
       ctx.globalCompositeOperation = "source-over";
