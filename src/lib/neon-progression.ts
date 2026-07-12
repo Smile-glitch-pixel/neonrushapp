@@ -1,17 +1,120 @@
-export type SkinId = "cyan" | "magenta" | "gold" | "lime" | "plasma" | "ghost" | "rainbow" | "eclipse";
+export type SkinId =
+  | "cyan" | "magenta" | "lime" | "coral" | "mint"
+  | "gold" | "plasma" | "ember" | "ice" | "bubble" | "dusk"
+  | "ghost" | "void" | "aurora" | "solar" | "prism"
+  | "rainbow" | "phoenix" | "quantum"
+  | "singularity"
+  | "eclipse";
+
+export type Rarity = "common" | "rare" | "epic" | "legendary" | "mythic" | "exclusive";
 export type GameMode = "classic" | "hardcore" | "zen" | "blitz";
 
-export const SKINS: { id: SkinId; name: string; price: number; colors: [string, string, string]; rarity: "common" | "rare" | "epic" | "legendary" | "exclusive"; passOnly?: boolean }[] = [
-  { id: "cyan", name: "Cyan", price: 0, colors: ["#ffffff", "#c88cff", "#a050ff"], rarity: "common" },
-  { id: "magenta", name: "Magenta", price: 300, colors: ["#ffffff", "#ff7bd1", "#ff2e9a"], rarity: "common" },
-  { id: "gold", name: "Gold", price: 800, colors: ["#fff8d0", "#ffd76b", "#ff9a2b"], rarity: "rare" },
-  { id: "lime", name: "Lime", price: 800, colors: ["#e8ffd0", "#a8ff5c", "#3ddc4a"], rarity: "rare" },
-  { id: "plasma", name: "Plasma", price: 1500, colors: ["#ffffff", "#7bf3ff", "#2a6bff"], rarity: "epic" },
-  { id: "ghost", name: "Ghost", price: 2000, colors: ["#f0f0ff", "#a0a0d0", "#404060"], rarity: "epic" },
-  { id: "rainbow", name: "Rainbow", price: 5000, colors: ["#ff2e6a", "#fff17a", "#7bf3ff"], rarity: "legendary" },
-  // Exclusive pass reward — only obtainable at tier 100
-  { id: "eclipse", name: "Eclipse", price: 0, colors: ["#ffffff", "#8b5cff", "#0b0620"], rarity: "exclusive", passOnly: true },
+export type Skin = {
+  id: SkinId;
+  name: string;
+  price: number;         // 0 when not shop-purchasable
+  colors: [string, string, string];
+  rarity: Rarity;
+  passOnly?: boolean;
+  chestOnly?: boolean;   // legendary/mythic — never sold in shop
+};
+
+export const SKINS: Skin[] = [
+  // ---------- Common (5) — simple color swaps ----------
+  { id: "cyan",    name: "Cyan",     price: 0,    colors: ["#ffffff", "#c88cff", "#a050ff"], rarity: "common" },
+  { id: "magenta", name: "Magenta",  price: 300,  colors: ["#ffffff", "#ff7bd1", "#ff2e9a"], rarity: "common" },
+  { id: "lime",    name: "Lime",     price: 300,  colors: ["#e8ffd0", "#a8ff5c", "#3ddc4a"], rarity: "common" },
+  { id: "coral",   name: "Coral",    price: 300,  colors: ["#ffefe0", "#ff9a7b", "#ff5236"], rarity: "common" },
+  { id: "mint",    name: "Mint",     price: 300,  colors: ["#e6fff5", "#7bf3c8", "#12c084"], rarity: "common" },
+
+  // ---------- Rare (6) — new trail + small particles ----------
+  { id: "gold",    name: "Gold",     price: 900,  colors: ["#fff8d0", "#ffd76b", "#ff9a2b"], rarity: "rare" },
+  { id: "plasma",  name: "Plasma",   price: 900,  colors: ["#ffffff", "#7bf3ff", "#2a6bff"], rarity: "rare" },
+  { id: "ember",   name: "Ember",    price: 900,  colors: ["#fff0d6", "#ffb36b", "#c33021"], rarity: "rare" },
+  { id: "ice",     name: "Ice",      price: 900,  colors: ["#e8f8ff", "#9ee0ff", "#4a8dd6"], rarity: "rare" },
+  { id: "bubble",  name: "Bubble",   price: 900,  colors: ["#ffe8f8", "#ff9cd8", "#c94ec6"], rarity: "rare" },
+  { id: "dusk",    name: "Dusk",     price: 900,  colors: ["#ffd9e8", "#c084fc", "#4a2c8f"], rarity: "rare" },
+
+  // ---------- Epic (5) — new effects, pulsing aura ----------
+  { id: "ghost",   name: "Ghost",    price: 2500, colors: ["#f0f0ff", "#a0a0d0", "#404060"], rarity: "epic" },
+  { id: "void",    name: "Void",     price: 2500, colors: ["#3b1e7a", "#8b3ff5", "#000000"], rarity: "epic" },
+  { id: "aurora",  name: "Aurora",   price: 2500, colors: ["#c9ffea", "#7bf3ff", "#8bff7b"], rarity: "epic" },
+  { id: "solar",   name: "Solar",    price: 2500, colors: ["#fff2a0", "#ffb020", "#ff4020"], rarity: "epic" },
+  { id: "prism",   name: "Prism",    price: 2500, colors: ["#ffffff", "#ff7bd1", "#7bf3ff"], rarity: "epic" },
+
+  // ---------- Legendary (3) — chest only, big glow + long trail ----------
+  { id: "rainbow", name: "Rainbow",  price: 0,    colors: ["#ff2e6a", "#fff17a", "#7bf3ff"], rarity: "legendary", chestOnly: true },
+  { id: "phoenix", name: "Phoenix",  price: 0,    colors: ["#fff8d0", "#ff8020", "#c31020"], rarity: "legendary", chestOnly: true },
+  { id: "quantum", name: "Quantum",  price: 0,    colors: ["#e0f8ff", "#5b8dff", "#ff2ea8"], rarity: "legendary", chestOnly: true },
+
+  // ---------- Mythic (1) — chest only, aura + unique sound ----------
+  { id: "singularity", name: "Singularity", price: 0, colors: ["#ffffff", "#c39bff", "#000000"], rarity: "mythic", chestOnly: true },
+
+  // ---------- Exclusive Battle Pass reward ----------
+  { id: "eclipse", name: "Eclipse",  price: 0,    colors: ["#ffffff", "#8b5cff", "#0b0620"], rarity: "exclusive", passOnly: true },
 ];
+
+/* ---------------- Rarity metadata & FX ---------------- */
+export const RARITY_COLOR: Record<Rarity, string> = {
+  common:    "#c8d0e0",
+  rare:      "#7bf3ff",
+  epic:      "#c39bff",
+  legendary: "#ffd76b",
+  mythic:    "#ff2e9a",
+  exclusive: "#8b5cff",
+};
+
+// In-game visual/audio FX applied to the player based on the equipped skin's rarity.
+export type SkinFx = {
+  trailLen: number;      // number of trail points kept
+  particles: number;     // extra multiplier for pickup burst
+  pulse: number;         // scale amplitude (0 = none)
+  aura: number;          // outer aura radius multiplier (0 = none)
+  soundBoost: number;    // extra tone layered on pickup (0 = none)
+};
+export const RARITY_FX: Record<Rarity, SkinFx> = {
+  common:    { trailLen: 22, particles: 1,   pulse: 0,    aura: 0,   soundBoost: 0 },
+  rare:      { trailLen: 34, particles: 1.4, pulse: 0.03, aura: 0,   soundBoost: 0 },
+  epic:      { trailLen: 44, particles: 1.8, pulse: 0.06, aura: 1.4, soundBoost: 0.3 },
+  legendary: { trailLen: 60, particles: 2.3, pulse: 0.09, aura: 1.9, soundBoost: 0.6 },
+  mythic:    { trailLen: 80, particles: 3.0, pulse: 0.12, aura: 2.6, soundBoost: 1.0 },
+  exclusive: { trailLen: 55, particles: 2.0, pulse: 0.08, aura: 1.7, soundBoost: 0.5 },
+};
+
+/* ---------------- Chest drop weights ---------------- */
+// Chances of drawing a skin of each rarity from a chest.
+// passOnly (Exclusive) is NEVER dropped by chests.
+export const CHEST_WEIGHTS: Record<Exclude<Rarity, "exclusive">, number> = {
+  common:    55,
+  rare:      27,
+  epic:      12,
+  legendary: 5,
+  mythic:    1,
+};
+
+// Draw a chest reward: returns either a new skin id, or `null` to fall back to coins.
+export const drawChestSkin = (ownedIds: SkinId[]): { skin: SkinId; rarity: Rarity } | null => {
+  const rarities = Object.keys(CHEST_WEIGHTS) as Array<Exclude<Rarity, "exclusive">>;
+  const total = rarities.reduce((a, r) => a + CHEST_WEIGHTS[r], 0);
+  let roll = Math.random() * total;
+  let picked: Exclude<Rarity, "exclusive"> = "common";
+  for (const r of rarities) { if (roll < CHEST_WEIGHTS[r]) { picked = r; break; } roll -= CHEST_WEIGHTS[r]; }
+
+  // Try picked rarity first, then descend, then ascend, to always give SOMETHING when possible.
+  const order: Exclude<Rarity, "exclusive">[] = ["mythic", "legendary", "epic", "rare", "common"];
+  const start = order.indexOf(picked);
+  const rotated = [...order.slice(start), ...order.slice(0, start).reverse()];
+  for (const r of rotated) {
+    const pool = SKINS.filter((s) => s.rarity === r && !s.passOnly && !ownedIds.includes(s.id));
+    if (pool.length > 0) {
+      const s = pool[Math.floor(Math.random() * pool.length)];
+      return { skin: s.id, rarity: s.rarity };
+    }
+  }
+  return null;
+};
+
+export const CHEST_COST = 400;
 
 export const REWARD_MULT: Record<GameMode, number> = {
   zen: 0.4,
@@ -37,7 +140,7 @@ export type PassReward = { type: "coins" | "xp" | "chest" | "skin"; value: numbe
 export const PASS_REWARDS: PassReward[] = Array.from({ length: PASS_TIERS }, (_, i) => {
   const tier = i + 1;
   if (tier === PASS_TIERS) return { type: "skin", value: "eclipse" };
-  if (tier % 25 === 0) return { type: "chest", value: 3 }; // mega chest = 3 pulls
+  if (tier % 25 === 0) return { type: "chest", value: 3 };
   if (tier % 10 === 0) return { type: "chest", value: 1 };
   if (tier % 5 === 0) return { type: "xp", value: 300 + tier * 4 };
   return { type: "coins", value: 60 + tier * 8 };
@@ -168,6 +271,11 @@ export const loadProg = (): Progression => {
     if (!raw) return defaultProg();
     const p = JSON.parse(raw);
     const merged: Progression = { ...defaultProg(), ...p };
+    // Filter out any owned/equipped id that no longer exists in the catalog
+    const validIds = new Set(SKINS.map((s) => s.id));
+    merged.owned = (merged.owned || []).filter((id) => validIds.has(id));
+    if (!merged.owned.includes("cyan")) merged.owned.push("cyan");
+    if (!validIds.has(merged.equipped)) merged.equipped = "cyan";
     merged.missions = refreshMissionsIfNeeded(merged.missions);
     return merged;
   } catch {

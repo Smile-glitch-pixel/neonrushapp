@@ -5,7 +5,8 @@ import { LANGS, type Lang, t } from "@/lib/i18n";
 import {
   MODES, SKINS, PASS_TIERS, PASS_XP_PER_TIER, PASS_REWARDS, REWARD_MULT, rankFor,
   loadProg, saveProg, defaultProg, refreshMissionsIfNeeded, findTemplate,
-  type GameMode, type Progression, type SkinId, type MissionStat,
+  RARITY_FX, RARITY_COLOR, drawChestSkin, CHEST_COST,
+  type GameMode, type Progression, type SkinId, type MissionStat, type Rarity,
 } from "@/lib/neon-progression";
 import { supabase } from "@/integrations/supabase/client";
 import { pullPlayerState, pushPlayerState } from "@/lib/player-sync.functions";
@@ -263,6 +264,7 @@ export default function NeonRush() {
   const tr = useCallback((k: string) => t(lang, k), [lang]);
 
   const equippedSkin = SKINS.find((s) => s.id === prog.equipped) || SKINS[0];
+  const equippedFx = RARITY_FX[equippedSkin.rarity];
   const best = prog.bestByMode[mode] || 0;
   const rank = rankFor(Math.max(...Object.values(prog.bestByMode)));
 
@@ -278,6 +280,8 @@ export default function NeonRush() {
     dpr: 1, w: 0, h: 0, over: false, running: false, difficulty: 1,
     mode: "classic" as GameMode,
     skinColors: equippedSkin.colors as [string, string, string],
+    skinFx: equippedFx,
+    skinRarity: equippedSkin.rarity as Rarity,
     duration: 0,
     runOrbs: 0, runPowers: 0,
   });
@@ -294,13 +298,17 @@ export default function NeonRush() {
     s.powers = { shield: 0, slow: 0, magnet: 0, x2: 0 };
     s.over = false; s.running = true; s.difficulty = m === "hardcore" ? 1.5 : 1;
     s.mode = m;
-    s.skinColors = (SKINS.find((k) => k.id === prog.equipped) || SKINS[0]).colors as [string, string, string];
+    const sk = SKINS.find((k) => k.id === prog.equipped) || SKINS[0];
+    s.skinColors = sk.colors as [string, string, string];
+    s.skinFx = RARITY_FX[sk.rarity];
+    s.skinRarity = sk.rarity;
     s.duration = m === "blitz" ? 60000 : 0;
     setMode(m); setScore(0); setCombo(0);
     setPowers({ shield: 0, slow: 0, magnet: 0, x2: 0 });
     setTimeLeft(m === "blitz" ? 60 : 0);
     setGameOver(false); setRunning(true); setPanel(null); setRewardEarned(null);
   }, [prog.equipped]);
+
 
   // Input — Pointer Events for zero-latency touch/mouse tracking
   useEffect(() => {
@@ -370,26 +378,16 @@ export default function NeonRush() {
     return () => window.removeEventListener("resize", resize);
   }, []);
 
-  // End-of-run rewards
+  // End-of-run rewards. Skins are NO LONGER dropped from runs — chests + shop + BP only.
   const finishRun = useCallback((finalScore: number, finalMode: GameMode, finalCombo: number) => {
     const mult = REWARD_MULT[finalMode] ?? 1;
     const earnedCoins = Math.floor((finalScore / 10) * mult);
     const earnedXP = Math.floor((finalScore / 6) * mult);
-    // Skin drop chance — exclude legendary AND passOnly (exclusive)
-    const dropChance = Math.min(0.25, (finalScore / 20000) * mult);
-    let droppedSkin: SkinId | undefined;
-    if (Math.random() < dropChance) {
-      const unowned = SKINS.filter((s) => s.rarity !== "legendary" && !s.passOnly);
-      const pick = unowned[Math.floor(Math.random() * unowned.length)];
-      if (pick) droppedSkin = pick.id;
-    }
     setProg((p) => {
-      const owned = droppedSkin && !p.owned.includes(droppedSkin) ? [...p.owned, droppedSkin] : p.owned;
       const bestByMode = { ...p.bestByMode, [finalMode]: Math.max(p.bestByMode[finalMode] || 0, finalScore) };
-      return { ...p, coins: p.coins + earnedCoins, xp: p.xp + earnedXP, owned, bestByMode };
+      return { ...p, coins: p.coins + earnedCoins, xp: p.xp + earnedXP, bestByMode };
     });
-    setRewardEarned({ coins: earnedCoins, xp: earnedXP, skin: droppedSkin && !prog.owned.includes(droppedSkin) ? droppedSkin : undefined });
-    if (droppedSkin && !prog.owned.includes(droppedSkin)) showToast(`${t(lang, "newSkin")} ${SKINS.find((s) => s.id === droppedSkin)?.name}`);
+    setRewardEarned({ coins: earnedCoins, xp: earnedXP });
 
     // Missions: runs / score / combo (only if run wasn't quit early — Zen quits use gameOverNow too, we still count)
     // Missions — everything counts WITHIN THIS RUN (per-run max), except runs/blitzRuns which stay cumulative
@@ -413,7 +411,7 @@ export default function NeonRush() {
         equipped_skin: prog.equipped,
       } }).catch(() => { /* noop */ });
     }
-  }, [prog.owned, prog.displayName, prog.equipped, lang, user, submitScoreFn]);
+  }, [prog.displayName, prog.equipped, user, submitScoreFn]);
 
 
   // Main loop
@@ -503,7 +501,7 @@ export default function NeonRush() {
         s.player.x = Math.max(s.player.r, Math.min(s.w - s.player.r, s.player.x));
         s.player.y = Math.max(s.player.r, Math.min(s.h - s.player.r, s.player.y));
         s.player.trail.push({ x: s.player.x, y: s.player.y });
-        if (s.player.trail.length > 22) s.player.trail.shift();
+        if (s.player.trail.length > s.skinFx.trailLen) s.player.trail.shift();
 
         (Object.keys(s.powers) as Array<keyof typeof s.powers>).forEach((k) => { s.powers[k] = Math.max(0, s.powers[k] - dt); });
         s.comboTimer = Math.max(0, s.comboTimer - dt);
@@ -536,7 +534,7 @@ export default function NeonRush() {
               const gain = (10 + s.combo * 2) * mul;
               s.score += gain; setScore(Math.floor(s.score)); setCombo(s.combo);
               audioRef.current.pickup(s.combo);
-              burst(e.x, e.y, "#7bf3ff", 18, 1);
+              burst(e.x, e.y, s.skinColors[1], Math.round(18 * s.skinFx.particles), 1);
               s.entities.splice(i, 1);
               s.runOrbs++;
             } else if (e.kind === "power" && e.power) {
@@ -565,10 +563,15 @@ export default function NeonRush() {
       }
 
       ctx.globalCompositeOperation = "lighter";
+      // Trail tinted with equipped skin's mid color
+      const [tc0, tc1] = s.skinColors;
       for (let i = 0; i < s.player.trail.length; i++) {
         const tt = s.player.trail[i]; const a = i / s.player.trail.length;
         ctx.beginPath();
-        ctx.fillStyle = `rgba(200, 200, 255, ${a * 0.35})`;
+        ctx.fillStyle = i % 2 === 0
+          ? `rgba(255,255,255,${a * 0.25})`
+          : `${tc1}${Math.floor(a * 90 + 20).toString(16).padStart(2, "0")}`;
+        void tc0;
         ctx.arc(tt.x, tt.y, s.player.r * (0.3 + a * 0.9), 0, Math.PI * 2);
         ctx.fill();
       }
@@ -636,10 +639,20 @@ export default function NeonRush() {
         ctx.beginPath(); ctx.arc(s.player.x, s.player.y, pr + 10 + Math.sin(s.t / 100) * 2, 0, Math.PI * 2); ctx.stroke();
       }
       const [c0, c1, c2] = s.skinColors;
-      const pg = ctx.createRadialGradient(s.player.x, s.player.y, 0, s.player.x, s.player.y, pr * 3);
+      const pulse = 1 + Math.sin(s.t / 200) * s.skinFx.pulse;
+      // Mythic/legendary aura ring
+      if (s.skinFx.aura > 0) {
+        const ar = pr * (2.2 + s.skinFx.aura) * pulse;
+        const ag = ctx.createRadialGradient(s.player.x, s.player.y, pr * 0.8, s.player.x, s.player.y, ar);
+        ag.addColorStop(0, `${c1}55`);
+        ag.addColorStop(0.6, `${c1}22`);
+        ag.addColorStop(1, "rgba(0,0,0,0)");
+        ctx.fillStyle = ag; ctx.beginPath(); ctx.arc(s.player.x, s.player.y, ar, 0, Math.PI * 2); ctx.fill();
+      }
+      const pg = ctx.createRadialGradient(s.player.x, s.player.y, 0, s.player.x, s.player.y, pr * 3 * pulse);
       pg.addColorStop(0, c0); pg.addColorStop(0.3, c1); pg.addColorStop(1, "rgba(0,0,0,0)");
-      ctx.fillStyle = pg; ctx.beginPath(); ctx.arc(s.player.x, s.player.y, pr * 3, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = c2; ctx.beginPath(); ctx.arc(s.player.x, s.player.y, pr * 0.9, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = pg; ctx.beginPath(); ctx.arc(s.player.x, s.player.y, pr * 3 * pulse, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = c2; ctx.beginPath(); ctx.arc(s.player.x, s.player.y, pr * 0.9 * pulse, 0, Math.PI * 2); ctx.fill();
       ctx.fillStyle = "#ffffff"; ctx.beginPath(); ctx.arc(s.player.x, s.player.y, pr * 0.5, 0, Math.PI * 2); ctx.fill();
 
       ctx.globalCompositeOperation = "source-over";
@@ -698,7 +711,7 @@ export default function NeonRush() {
 
   const buySkin = (id: SkinId) => {
     const sk = SKINS.find((s) => s.id === id)!;
-    if (sk.passOnly) return;
+    if (sk.passOnly || sk.chestOnly) return; // legendary/mythic = chest only
     if (prog.owned.includes(id)) return;
     if (prog.coins < sk.price) { showToast(tr("notEnough")); return; }
     setProg((p) => ({ ...p, coins: p.coins - sk.price, owned: [...p.owned, id] }));
@@ -709,22 +722,24 @@ export default function NeonRush() {
     setProg((p) => ({ ...p, equipped: id }));
   };
   const openChest = () => {
-    if (prog.coins < 250) { showToast(tr("notEnough")); return; }
-    const unowned = SKINS.filter((s) => !prog.owned.includes(s.id) && !s.passOnly);
+    if (prog.coins < CHEST_COST) { showToast(tr("notEnough")); return; }
+    const drop = drawChestSkin(prog.owned);
     setProg((p) => {
-      let np = { ...p, coins: p.coins - 250 };
-      if (unowned.length > 0 && Math.random() < 0.6) {
-        const pick = unowned[Math.floor(Math.random() * unowned.length)];
-        np = { ...np, owned: [...np.owned, pick.id] };
-        showToast(`${tr("newSkin")} ${pick.name}`);
+      let np = { ...p, coins: p.coins - CHEST_COST };
+      if (drop) {
+        np = { ...np, owned: [...np.owned, drop.skin] };
+        const name = SKINS.find((s) => s.id === drop.skin)?.name ?? drop.skin;
+        showToast(`✨ ${drop.rarity.toUpperCase()} — ${name}`);
+        audioRef.current.power();
       } else {
-        const bonus = 100 + Math.floor(Math.random() * 300);
+        const bonus = 150 + Math.floor(Math.random() * 400);
         np = { ...np, coins: np.coins + bonus };
-        showToast(`+${bonus} ${tr("coins")}`);
+        showToast(`+${bonus} 🪙`);
       }
       return np;
     });
   };
+
 
   const claimMission = (id: string) => {
     const tpl = findTemplate(id); if (!tpl) return;
@@ -942,23 +957,25 @@ export default function NeonRush() {
               <div>
                 <div className="mb-3 flex items-center justify-between text-xs uppercase tracking-[0.2em]">
                   <span className="text-glow-yellow">🪙 {prog.coins}</span>
-                  <button onClick={openChest} className="panel-neon rounded-lg px-3 py-1 text-glow-magenta hover:scale-105 transition">🎁 {tr("openChest")} · 250</button>
+                  <button onClick={openChest} className="panel-neon rounded-lg px-3 py-1 text-glow-magenta hover:scale-105 transition">🎁 {tr("openChest")} · {CHEST_COST}</button>
                 </div>
                 <div className="grid grid-cols-2 gap-2">
                   {SKINS.map((s) => {
                     const owned = prog.owned.includes(s.id);
                     const eq = prog.equipped === s.id;
+                    const rc = RARITY_COLOR[s.rarity];
+                    const locked = !owned && (s.chestOnly || s.passOnly);
                     return (
-                      <div key={s.id} className="rounded-xl border border-border/50 bg-black/30 p-3">
-                        <div className="mx-auto h-12 w-12 rounded-full" style={{ background: `radial-gradient(circle at 30% 30%, ${s.colors[0]}, ${s.colors[1]} 50%, ${s.colors[2]})`, boxShadow: `0 0 20px ${s.colors[1]}` }} />
+                      <div key={s.id} className="rounded-xl border p-3" style={{ borderColor: `${rc}55`, background: `linear-gradient(180deg, ${rc}10, rgba(0,0,0,0.35))` }}>
+                        <div className="mx-auto h-12 w-12 rounded-full" style={{ background: `radial-gradient(circle at 30% 30%, ${s.colors[0]}, ${s.colors[1]} 50%, ${s.colors[2]})`, boxShadow: `0 0 24px ${rc}` }} />
                         <div className="mt-2 text-center text-xs font-bold uppercase tracking-widest">{s.name}</div>
-                        <div className="text-center text-[10px] uppercase tracking-[0.2em] text-muted-foreground">{s.rarity}</div>
+                        <div className="text-center text-[10px] uppercase tracking-[0.25em] font-bold" style={{ color: rc, textShadow: `0 0 8px ${rc}` }}>{s.rarity}</div>
                         <button
                           onClick={() => (owned ? equipSkin(s.id) : buySkin(s.id))}
-                          disabled={eq}
-                          className={`mt-2 w-full rounded-lg px-2 py-1 text-[10px] font-bold uppercase tracking-widest transition ${eq ? "bg-[color:var(--neon-cyan)]/20 text-glow-cyan" : owned ? "bg-black/40 text-glow-magenta hover:scale-105" : "bg-black/40 text-glow-yellow hover:scale-105"}`}
+                          disabled={eq || locked}
+                          className={`mt-2 w-full rounded-lg px-2 py-1 text-[10px] font-bold uppercase tracking-widest transition ${eq ? "bg-[color:var(--neon-cyan)]/20 text-glow-cyan" : owned ? "bg-black/40 text-glow-magenta hover:scale-105" : locked ? "bg-black/40 text-muted-foreground" : "bg-black/40 text-glow-yellow hover:scale-105"}`}
                         >
-                          {eq ? tr("equipped") : owned ? tr("equip") : `${tr("buy")} · ${s.price} 🪙`}
+                          {eq ? tr("equipped") : owned ? tr("equip") : s.passOnly ? "🏆 Pass" : s.chestOnly ? "🎁 Coffre" : `${tr("buy")} · ${s.price} 🪙`}
                         </button>
                       </div>
                     );
