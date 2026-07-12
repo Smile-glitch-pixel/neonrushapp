@@ -538,12 +538,12 @@ export default function NeonRush() {
               audioRef.current.pickup(s.combo);
               burst(e.x, e.y, "#7bf3ff", 18, 1);
               s.entities.splice(i, 1);
-              bumpMissionRef.current("orbs", 1);
+              s.runOrbs++;
             } else if (e.kind === "power" && e.power) {
               s.powers[e.power] = 6000; setPowers({ ...s.powers });
               audioRef.current.power(); burst(e.x, e.y, "#fff17a", 40, 1.4);
               s.entities.splice(i, 1);
-              bumpMissionRef.current("powers", 1);
+              s.runPowers++;
             } else if (e.kind === "hazard") {
               if (s.powers.shield > 0) {
                 s.powers.shield = 0; setPowers({ ...s.powers });
