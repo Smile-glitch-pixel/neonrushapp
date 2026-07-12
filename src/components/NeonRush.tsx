@@ -264,6 +264,7 @@ export default function NeonRush() {
   const tr = useCallback((k: string) => t(lang, k), [lang]);
 
   const equippedSkin = SKINS.find((s) => s.id === prog.equipped) || SKINS[0];
+  const equippedFx = RARITY_FX[equippedSkin.rarity];
   const best = prog.bestByMode[mode] || 0;
   const rank = rankFor(Math.max(...Object.values(prog.bestByMode)));
 
@@ -279,6 +280,8 @@ export default function NeonRush() {
     dpr: 1, w: 0, h: 0, over: false, running: false, difficulty: 1,
     mode: "classic" as GameMode,
     skinColors: equippedSkin.colors as [string, string, string],
+    skinFx: equippedFx,
+    skinRarity: equippedSkin.rarity as Rarity,
     duration: 0,
     runOrbs: 0, runPowers: 0,
   });
@@ -295,13 +298,17 @@ export default function NeonRush() {
     s.powers = { shield: 0, slow: 0, magnet: 0, x2: 0 };
     s.over = false; s.running = true; s.difficulty = m === "hardcore" ? 1.5 : 1;
     s.mode = m;
-    s.skinColors = (SKINS.find((k) => k.id === prog.equipped) || SKINS[0]).colors as [string, string, string];
+    const sk = SKINS.find((k) => k.id === prog.equipped) || SKINS[0];
+    s.skinColors = sk.colors as [string, string, string];
+    s.skinFx = RARITY_FX[sk.rarity];
+    s.skinRarity = sk.rarity;
     s.duration = m === "blitz" ? 60000 : 0;
     setMode(m); setScore(0); setCombo(0);
     setPowers({ shield: 0, slow: 0, magnet: 0, x2: 0 });
     setTimeLeft(m === "blitz" ? 60 : 0);
     setGameOver(false); setRunning(true); setPanel(null); setRewardEarned(null);
   }, [prog.equipped]);
+
 
   // Input — Pointer Events for zero-latency touch/mouse tracking
   useEffect(() => {
