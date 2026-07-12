@@ -711,7 +711,7 @@ export default function NeonRush() {
 
   const buySkin = (id: SkinId) => {
     const sk = SKINS.find((s) => s.id === id)!;
-    if (sk.passOnly) return;
+    if (sk.passOnly || sk.chestOnly) return; // legendary/mythic = chest only
     if (prog.owned.includes(id)) return;
     if (prog.coins < sk.price) { showToast(tr("notEnough")); return; }
     setProg((p) => ({ ...p, coins: p.coins - sk.price, owned: [...p.owned, id] }));
@@ -722,22 +722,24 @@ export default function NeonRush() {
     setProg((p) => ({ ...p, equipped: id }));
   };
   const openChest = () => {
-    if (prog.coins < 250) { showToast(tr("notEnough")); return; }
-    const unowned = SKINS.filter((s) => !prog.owned.includes(s.id) && !s.passOnly);
+    if (prog.coins < CHEST_COST) { showToast(tr("notEnough")); return; }
+    const drop = drawChestSkin(prog.owned);
     setProg((p) => {
-      let np = { ...p, coins: p.coins - 250 };
-      if (unowned.length > 0 && Math.random() < 0.6) {
-        const pick = unowned[Math.floor(Math.random() * unowned.length)];
-        np = { ...np, owned: [...np.owned, pick.id] };
-        showToast(`${tr("newSkin")} ${pick.name}`);
+      let np = { ...p, coins: p.coins - CHEST_COST };
+      if (drop) {
+        np = { ...np, owned: [...np.owned, drop.skin] };
+        const name = SKINS.find((s) => s.id === drop.skin)?.name ?? drop.skin;
+        showToast(`✨ ${drop.rarity.toUpperCase()} — ${name}`);
+        audioRef.current.power();
       } else {
-        const bonus = 100 + Math.floor(Math.random() * 300);
+        const bonus = 150 + Math.floor(Math.random() * 400);
         np = { ...np, coins: np.coins + bonus };
-        showToast(`+${bonus} ${tr("coins")}`);
+        showToast(`+${bonus} 🪙`);
       }
       return np;
     });
   };
+
 
   const claimMission = (id: string) => {
     const tpl = findTemplate(id); if (!tpl) return;
