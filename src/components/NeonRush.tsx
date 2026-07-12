@@ -563,10 +563,15 @@ export default function NeonRush() {
       }
 
       ctx.globalCompositeOperation = "lighter";
+      // Trail tinted with equipped skin's mid color
+      const [tc0, tc1] = s.skinColors;
       for (let i = 0; i < s.player.trail.length; i++) {
         const tt = s.player.trail[i]; const a = i / s.player.trail.length;
         ctx.beginPath();
-        ctx.fillStyle = `rgba(200, 200, 255, ${a * 0.35})`;
+        ctx.fillStyle = i % 2 === 0
+          ? `rgba(255,255,255,${a * 0.25})`
+          : `${tc1}${Math.floor(a * 90 + 20).toString(16).padStart(2, "0")}`;
+        void tc0;
         ctx.arc(tt.x, tt.y, s.player.r * (0.3 + a * 0.9), 0, Math.PI * 2);
         ctx.fill();
       }
