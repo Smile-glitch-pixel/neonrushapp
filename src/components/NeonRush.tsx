@@ -957,23 +957,25 @@ export default function NeonRush() {
               <div>
                 <div className="mb-3 flex items-center justify-between text-xs uppercase tracking-[0.2em]">
                   <span className="text-glow-yellow">🪙 {prog.coins}</span>
-                  <button onClick={openChest} className="panel-neon rounded-lg px-3 py-1 text-glow-magenta hover:scale-105 transition">🎁 {tr("openChest")} · 250</button>
+                  <button onClick={openChest} className="panel-neon rounded-lg px-3 py-1 text-glow-magenta hover:scale-105 transition">🎁 {tr("openChest")} · {CHEST_COST}</button>
                 </div>
                 <div className="grid grid-cols-2 gap-2">
                   {SKINS.map((s) => {
                     const owned = prog.owned.includes(s.id);
                     const eq = prog.equipped === s.id;
+                    const rc = RARITY_COLOR[s.rarity];
+                    const locked = !owned && (s.chestOnly || s.passOnly);
                     return (
-                      <div key={s.id} className="rounded-xl border border-border/50 bg-black/30 p-3">
-                        <div className="mx-auto h-12 w-12 rounded-full" style={{ background: `radial-gradient(circle at 30% 30%, ${s.colors[0]}, ${s.colors[1]} 50%, ${s.colors[2]})`, boxShadow: `0 0 20px ${s.colors[1]}` }} />
+                      <div key={s.id} className="rounded-xl border p-3" style={{ borderColor: `${rc}55`, background: `linear-gradient(180deg, ${rc}10, rgba(0,0,0,0.35))` }}>
+                        <div className="mx-auto h-12 w-12 rounded-full" style={{ background: `radial-gradient(circle at 30% 30%, ${s.colors[0]}, ${s.colors[1]} 50%, ${s.colors[2]})`, boxShadow: `0 0 24px ${rc}` }} />
                         <div className="mt-2 text-center text-xs font-bold uppercase tracking-widest">{s.name}</div>
-                        <div className="text-center text-[10px] uppercase tracking-[0.2em] text-muted-foreground">{s.rarity}</div>
+                        <div className="text-center text-[10px] uppercase tracking-[0.25em] font-bold" style={{ color: rc, textShadow: `0 0 8px ${rc}` }}>{s.rarity}</div>
                         <button
                           onClick={() => (owned ? equipSkin(s.id) : buySkin(s.id))}
-                          disabled={eq}
-                          className={`mt-2 w-full rounded-lg px-2 py-1 text-[10px] font-bold uppercase tracking-widest transition ${eq ? "bg-[color:var(--neon-cyan)]/20 text-glow-cyan" : owned ? "bg-black/40 text-glow-magenta hover:scale-105" : "bg-black/40 text-glow-yellow hover:scale-105"}`}
+                          disabled={eq || locked}
+                          className={`mt-2 w-full rounded-lg px-2 py-1 text-[10px] font-bold uppercase tracking-widest transition ${eq ? "bg-[color:var(--neon-cyan)]/20 text-glow-cyan" : owned ? "bg-black/40 text-glow-magenta hover:scale-105" : locked ? "bg-black/40 text-muted-foreground" : "bg-black/40 text-glow-yellow hover:scale-105"}`}
                         >
-                          {eq ? tr("equipped") : owned ? tr("equip") : `${tr("buy")} · ${s.price} 🪙`}
+                          {eq ? tr("equipped") : owned ? tr("equip") : s.passOnly ? "🏆 Pass" : s.chestOnly ? "🎁 Coffre" : `${tr("buy")} · ${s.price} 🪙`}
                         </button>
                       </div>
                     );
