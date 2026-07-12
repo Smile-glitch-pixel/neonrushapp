@@ -390,11 +390,17 @@ export default function NeonRush() {
     if (droppedSkin && !prog.owned.includes(droppedSkin)) showToast(`${t(lang, "newSkin")} ${SKINS.find((s) => s.id === droppedSkin)?.name}`);
 
     // Missions: runs / score / combo (only if run wasn't quit early — Zen quits use gameOverNow too, we still count)
-    bumpMissionRef.current("runs", 1);
-    if (finalMode === "blitz") bumpMissionRef.current("blitzRuns", 1, "blitz");
-    bumpMissionRef.current("score", finalScore);
-    if (finalMode === "hardcore") bumpMissionRef.current("hardcoreScore", finalScore, "hardcore");
-    bumpMissionRef.current("combo", finalCombo);
+    // Missions — everything counts WITHIN THIS RUN (per-run max), except runs/blitzRuns which stay cumulative
+    const s = stateRef.current;
+    applyRunRef.current({
+      runs: 1,
+      blitzRuns: finalMode === "blitz" ? 1 : 0,
+      score: finalScore,
+      hardcoreScore: finalMode === "hardcore" ? finalScore : 0,
+      combo: finalCombo,
+      orbs: s.runOrbs || 0,
+      powers: s.runPowers || 0,
+    }, finalMode);
 
     // Leaderboard submit if signed in
     if (user && finalScore > 0) {
