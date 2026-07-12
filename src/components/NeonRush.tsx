@@ -279,6 +279,7 @@ export default function NeonRush() {
     mode: "classic" as GameMode,
     skinColors: equippedSkin.colors as [string, string, string],
     duration: 0,
+    runOrbs: 0, runPowers: 0,
   });
 
   const start = useCallback(async (m: GameMode) => {
