@@ -411,7 +411,7 @@ export default function NeonRush() {
         equipped_skin: prog.equipped,
       } }).catch(() => { /* noop */ });
     }
-  }, [prog.owned, prog.displayName, prog.equipped, lang, user, submitScoreFn]);
+  }, [prog.displayName, prog.equipped, user, submitScoreFn]);
 
 
   // Main loop
