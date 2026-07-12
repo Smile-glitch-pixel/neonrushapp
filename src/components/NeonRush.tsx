@@ -534,7 +534,7 @@ export default function NeonRush() {
               const gain = (10 + s.combo * 2) * mul;
               s.score += gain; setScore(Math.floor(s.score)); setCombo(s.combo);
               audioRef.current.pickup(s.combo);
-              burst(e.x, e.y, "#7bf3ff", 18, 1);
+              burst(e.x, e.y, s.skinColors[1], Math.round(18 * s.skinFx.particles), 1);
               s.entities.splice(i, 1);
               s.runOrbs++;
             } else if (e.kind === "power" && e.power) {
