@@ -4,7 +4,12 @@ export type SkinId =
   | "ghost" | "void" | "aurora" | "solar" | "prism"
   | "rainbow" | "phoenix" | "quantum"
   | "singularity"
-  | "eclipse";
+  | "eclipse"
+  | "azure" | "rose" | "olive" | "sand" | "sky"
+  | "obsidian" | "topaz" | "jade" | "cobalt" | "ruby"
+  | "nebula" | "vortex" | "chroma" | "arcane" | "spectre"
+  | "cosmic" | "inferno" | "tempest" | "abyss"
+  | "genesis";
 
 export type Rarity = "common" | "rare" | "epic" | "legendary" | "mythic" | "exclusive";
 export type GameMode = "classic" | "hardcore" | "zen" | "blitz";
@@ -52,6 +57,36 @@ export const SKINS: Skin[] = [
 
   // ---------- Exclusive Battle Pass reward ----------
   { id: "eclipse", name: "Eclipse",  price: 0,    colors: ["#ffffff", "#8b5cff", "#0b0620"], rarity: "exclusive", passOnly: true },
+
+  // ---------- Extra Commons ----------
+  { id: "azure",   name: "Azure",    price: 300,  colors: ["#e8f3ff", "#7bb3ff", "#2050c8"], rarity: "common" },
+  { id: "rose",    name: "Rose",     price: 300,  colors: ["#fff0f5", "#ffb0c8", "#e04070"], rarity: "common" },
+  { id: "olive",   name: "Olive",    price: 300,  colors: ["#f5f8d0", "#c8d060", "#6a7a20"], rarity: "common" },
+  { id: "sand",    name: "Sand",     price: 300,  colors: ["#fff5e0", "#f0c88a", "#a06a20"], rarity: "common" },
+  { id: "sky",     name: "Sky",      price: 300,  colors: ["#f0faff", "#a8dcff", "#4a90d6"], rarity: "common" },
+
+  // ---------- Extra Rares ----------
+  { id: "obsidian", name: "Obsidian", price: 900, colors: ["#c8c8d8", "#6a6a80", "#101018"], rarity: "rare" },
+  { id: "topaz",    name: "Topaz",    price: 900, colors: ["#fff8d0", "#ffb060", "#c08020"], rarity: "rare" },
+  { id: "jade",     name: "Jade",     price: 900, colors: ["#d8fff0", "#60d0a0", "#207050"], rarity: "rare" },
+  { id: "cobalt",   name: "Cobalt",   price: 900, colors: ["#e0e8ff", "#6080e8", "#1030a0"], rarity: "rare" },
+  { id: "ruby",     name: "Ruby",     price: 900, colors: ["#ffe0e8", "#ff5070", "#a01030"], rarity: "rare" },
+
+  // ---------- Extra Epics ----------
+  { id: "nebula",  name: "Nebula",   price: 2500, colors: ["#e0d0ff", "#a060ff", "#301060"], rarity: "epic" },
+  { id: "vortex",  name: "Vortex",   price: 2500, colors: ["#d0f0ff", "#40b0e0", "#101040"], rarity: "epic" },
+  { id: "chroma",  name: "Chroma",   price: 2500, colors: ["#ff70a0", "#70e0ff", "#a0ff70"], rarity: "epic" },
+  { id: "arcane",  name: "Arcane",   price: 2500, colors: ["#f0e0ff", "#c080ff", "#4020a0"], rarity: "epic" },
+  { id: "spectre", name: "Spectre",  price: 2500, colors: ["#e0fff8", "#80d8c8", "#204048"], rarity: "epic" },
+
+  // ---------- Extra Legendaries ----------
+  { id: "cosmic",  name: "Cosmic",   price: 0,    colors: ["#ffd0ff", "#8060ff", "#000030"], rarity: "legendary", chestOnly: true },
+  { id: "inferno", name: "Inferno",  price: 0,    colors: ["#fff0c0", "#ff6020", "#800000"], rarity: "legendary", chestOnly: true },
+  { id: "tempest", name: "Tempest",  price: 0,    colors: ["#d8f0ff", "#60a0ff", "#101050"], rarity: "legendary", chestOnly: true },
+  { id: "abyss",   name: "Abyss",    price: 0,    colors: ["#a0e0ff", "#2060a0", "#000010"], rarity: "legendary", chestOnly: true },
+
+  // ---------- Extra Mythic ----------
+  { id: "genesis", name: "Genesis",  price: 0,    colors: ["#ffffff", "#ffd0f0", "#200040"], rarity: "mythic", chestOnly: true },
 ];
 
 /* ---------------- Rarity metadata & FX ---------------- */
@@ -92,29 +127,43 @@ export const CHEST_WEIGHTS: Record<Exclude<Rarity, "exclusive">, number> = {
   mythic:    1,
 };
 
-// Draw a chest reward: returns either a new skin id, or `null` to fall back to coins.
-export const drawChestSkin = (ownedIds: SkinId[]): { skin: SkinId; rarity: Rarity } | null => {
+// Coin equivalent when a chest rolls a rarity but the player already owns
+// every skin of that rarity — value scales with rarity so mythic dupes still feel great.
+export const RARITY_COIN_VALUE: Record<Exclude<Rarity, "exclusive">, number> = {
+  common:    120,
+  rare:      350,
+  epic:      900,
+  legendary: 2200,
+  mythic:    6000,
+};
+
+export type ChestReward =
+  | { type: "skin"; skin: SkinId; rarity: Exclude<Rarity, "exclusive"> }
+  | { type: "coins"; coins: number; rarity: Exclude<Rarity, "exclusive"> };
+
+// Roll a chest reward. If the rolled rarity's pool is empty (all owned), the
+// player gets the coin equivalent of THAT rarity instead of rerolling.
+export const rollChestReward = (ownedIds: SkinId[]): ChestReward => {
   const rarities = Object.keys(CHEST_WEIGHTS) as Array<Exclude<Rarity, "exclusive">>;
   const total = rarities.reduce((a, r) => a + CHEST_WEIGHTS[r], 0);
   let roll = Math.random() * total;
   let picked: Exclude<Rarity, "exclusive"> = "common";
   for (const r of rarities) { if (roll < CHEST_WEIGHTS[r]) { picked = r; break; } roll -= CHEST_WEIGHTS[r]; }
-
-  // Try picked rarity first, then descend, then ascend, to always give SOMETHING when possible.
-  const order: Exclude<Rarity, "exclusive">[] = ["mythic", "legendary", "epic", "rare", "common"];
-  const start = order.indexOf(picked);
-  const rotated = [...order.slice(start), ...order.slice(0, start).reverse()];
-  for (const r of rotated) {
-    const pool = SKINS.filter((s) => s.rarity === r && !s.passOnly && !ownedIds.includes(s.id));
-    if (pool.length > 0) {
-      const s = pool[Math.floor(Math.random() * pool.length)];
-      return { skin: s.id, rarity: s.rarity };
-    }
+  const pool = SKINS.filter((s) => s.rarity === picked && !s.passOnly && !ownedIds.includes(s.id));
+  if (pool.length > 0) {
+    const s = pool[Math.floor(Math.random() * pool.length)];
+    return { type: "skin", skin: s.id, rarity: picked };
   }
-  return null;
+  return { type: "coins", coins: RARITY_COIN_VALUE[picked], rarity: picked };
 };
 
-export const CHEST_COST = 400;
+// Kept for backwards-compat; prefer rollChestReward.
+export const drawChestSkin = (ownedIds: SkinId[]): { skin: SkinId; rarity: Rarity } | null => {
+  const r = rollChestReward(ownedIds);
+  return r.type === "skin" ? { skin: r.skin, rarity: r.rarity } : null;
+};
+
+export const CHEST_COST = 500;
 
 export const REWARD_MULT: Record<GameMode, number> = {
   zen: 0.4,

@@ -5,7 +5,7 @@ import { LANGS, type Lang, t } from "@/lib/i18n";
 import {
   MODES, SKINS, PASS_TIERS, PASS_XP_PER_TIER, PASS_REWARDS, REWARD_MULT, rankFor,
   loadProg, saveProg, defaultProg, refreshMissionsIfNeeded, findTemplate,
-  RARITY_FX, RARITY_COLOR, drawChestSkin, CHEST_COST,
+  RARITY_FX, RARITY_COLOR, rollChestReward, CHEST_COST,
   type GameMode, type Progression, type SkinId, type MissionStat, type Rarity,
 } from "@/lib/neon-progression";
 import { supabase } from "@/integrations/supabase/client";
@@ -106,6 +106,35 @@ class AudioEngine {
     const tt = this.ctx.currentTime;
     for (let i = 0; i < 6; i++) this.playTone({ freq: 300 + i * 180, dur: 0.09, type: "square", gain: 0.15, at: tt + i * 0.04 });
   }
+  legendarySound() {
+    if (!this.ctx) return;
+    const tt = this.ctx.currentTime;
+    // Rising majestic arpeggio + sparkle
+    const notes = [261, 329, 392, 523, 659, 784, 1046];
+    notes.forEach((f, i) => {
+      this.playTone({ freq: f, dur: 0.35, type: "triangle", gain: 0.28, at: tt + i * 0.07 });
+      this.playTone({ freq: f * 2, dur: 0.25, type: "sine", gain: 0.15, at: tt + i * 0.07 + 0.02 });
+    });
+    this.noiseHit(0.4, 0.18, this.sfxGain ?? this.master!, tt + 0.5);
+  }
+  mythicSound() {
+    if (!this.ctx) return;
+    const tt = this.ctx.currentTime;
+    // Deep boom + shimmering ascending pad + bell
+    this.playTone({ freq: 55, dur: 1.2, type: "sawtooth", gain: 0.5, at: tt, filter: 400 });
+    this.playTone({ freq: 82, dur: 1.2, type: "square", gain: 0.3, at: tt, filter: 500 });
+    const notes = [523, 659, 784, 1046, 1318, 1568, 2093];
+    notes.forEach((f, i) => {
+      this.playTone({ freq: f, dur: 0.6, type: "sine", gain: 0.22, at: tt + 0.15 + i * 0.09 });
+      this.playTone({ freq: f * 1.5, dur: 0.4, type: "triangle", gain: 0.12, at: tt + 0.2 + i * 0.09 });
+    });
+    // Bell hits
+    [0.1, 0.55, 1.0].forEach((d) => {
+      this.playTone({ freq: 1568, dur: 0.5, type: "sine", gain: 0.35, at: tt + d });
+      this.playTone({ freq: 2093, dur: 0.5, type: "sine", gain: 0.25, at: tt + d });
+    });
+    this.noiseHit(0.8, 0.25, this.sfxGain ?? this.master!, tt + 0.05);
+  }
   hit() {
     if (!this.ctx) return;
     this.playTone({ freq: 220, dur: 0.35, type: "sawtooth", gain: 0.35, slideTo: 55, filter: 900 });
@@ -159,6 +188,9 @@ export default function NeonRush() {
   const fetchLbFn = useServerFn(fetchLeaderboard);
   const fetchRankFn = useServerFn(fetchMyRank);
   const pushTimer = useRef<number | null>(null);
+
+
+  const passListRef = useRef<HTMLDivElement>(null);
   const [lbMode, setLbMode] = useState<GameMode>("classic");
   type LbRow = { user_id: string; mode: string; score: number; display_name: string | null; equipped_skin: string | null };
   const [lbRows, setLbRows] = useState<LbRow[]>([]);
@@ -692,6 +724,20 @@ export default function NeonRush() {
   const passTier = Math.min(PASS_TIERS, Math.floor(prog.xp / PASS_XP_PER_TIER));
   const passProgressPct = ((prog.xp % PASS_XP_PER_TIER) / PASS_XP_PER_TIER) * 100;
 
+  // Auto-scroll Battle Pass list to current tier when opening the panel
+  useEffect(() => {
+    if (panel !== "pass") return;
+    const id = window.setTimeout(() => {
+      const list = passListRef.current;
+      if (!list) return;
+      const tier = Math.min(passTier, PASS_TIERS - 1);
+      const el = list.querySelector<HTMLElement>(`[data-tier="${tier}"]`);
+      if (el) list.scrollTo({ top: Math.max(0, el.offsetTop - 80), behavior: "smooth" });
+    }, 80);
+    return () => window.clearTimeout(id);
+  }, [panel, passTier]);
+
+
   const claimTier = (i: number) => {
     if (i >= passTier || prog.claimed.includes(i)) return;
     const reward = PASS_REWARDS[i];
@@ -723,21 +769,23 @@ export default function NeonRush() {
   };
   const openChest = () => {
     if (prog.coins < CHEST_COST) { showToast(tr("notEnough")); return; }
-    const drop = drawChestSkin(prog.owned);
+    const reward = rollChestReward(prog.owned);
     setProg((p) => {
       let np = { ...p, coins: p.coins - CHEST_COST };
-      if (drop) {
-        np = { ...np, owned: [...np.owned, drop.skin] };
-        const name = SKINS.find((s) => s.id === drop.skin)?.name ?? drop.skin;
-        showToast(`✨ ${drop.rarity.toUpperCase()} — ${name}`);
-        audioRef.current.power();
+      if (reward.type === "skin") {
+        np = { ...np, owned: [...np.owned, reward.skin] };
+        const name = SKINS.find((s) => s.id === reward.skin)?.name ?? reward.skin;
+        showToast(`✨ ${reward.rarity.toUpperCase()} — ${name}`);
       } else {
-        const bonus = 150 + Math.floor(Math.random() * 400);
-        np = { ...np, coins: np.coins + bonus };
-        showToast(`+${bonus} 🪙`);
+        np = { ...np, coins: np.coins + reward.coins };
+        showToast(`🪙 +${reward.coins} · ${reward.rarity.toUpperCase()} (déjà tout obtenu)`);
       }
       return np;
     });
+    // Rarity-tuned audio
+    if (reward.rarity === "mythic") audioRef.current.mythicSound();
+    else if (reward.rarity === "legendary") audioRef.current.legendarySound();
+    else audioRef.current.power();
   };
 
 
@@ -996,18 +1044,19 @@ export default function NeonRush() {
                   </div>
                   <div className="mt-2 text-[10px] uppercase tracking-[0.2em] text-muted-foreground text-center">{tr("passTier100")}</div>
                 </div>
-                <div className="grid grid-cols-2 gap-2 max-h-[50vh] overflow-y-auto">
+                <div ref={passListRef} className="grid grid-cols-2 gap-2 max-h-[50vh] overflow-y-auto">
                   {PASS_REWARDS.map((r, i) => {
                     const unlocked = i < passTier;
                     const claimed = prog.claimed.includes(i);
                     const isFinal = i === PASS_TIERS - 1;
+                    const isCurrent = i === Math.min(passTier, PASS_TIERS - 1);
                     const label =
                       r.type === "coins" ? `${r.value} 🪙` :
                       r.type === "xp" ? `+${r.value} XP` :
                       r.type === "chest" ? `🎁 ×${r.value}` :
                       `✨ ${r.value}`;
                     return (
-                      <div key={i} className={`rounded-xl border p-3 text-center ${isFinal ? "border-[color:var(--neon-magenta)] bg-[color:var(--neon-magenta)]/10" : unlocked ? "border-[color:var(--neon-cyan)]/60 bg-[color:var(--neon-cyan)]/10" : "border-border/40 bg-black/20 opacity-60"}`}>
+                      <div key={i} data-tier={i} className={`rounded-xl border p-3 text-center ${isFinal ? "border-[color:var(--neon-magenta)] bg-[color:var(--neon-magenta)]/10" : unlocked ? "border-[color:var(--neon-cyan)]/60 bg-[color:var(--neon-cyan)]/10" : "border-border/40 bg-black/20 opacity-60"} ${isCurrent ? "ring-2 ring-[color:var(--neon-yellow)]" : ""}`}>
                         <div className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
                           {tr("tier")} {i + 1}{isFinal ? ` · ${tr("exclusive")}` : ""}
                         </div>
