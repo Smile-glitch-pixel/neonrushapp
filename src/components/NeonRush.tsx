@@ -189,19 +189,6 @@ export default function NeonRush() {
   const fetchRankFn = useServerFn(fetchMyRank);
   const pushTimer = useRef<number | null>(null);
 
-  // Auto-scroll Battle Pass list to current tier when opening the panel
-  useEffect(() => {
-    if (panel !== "pass") return;
-    const id = window.setTimeout(() => {
-      const list = passListRef.current;
-      if (!list) return;
-      const tier = Math.min(passTier, PASS_TIERS - 1);
-      const el = list.querySelector<HTMLElement>(`[data-tier="${tier}"]`);
-      if (el) list.scrollTo({ top: Math.max(0, el.offsetTop - 80), behavior: "smooth" });
-    }, 80);
-    return () => window.clearTimeout(id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [panel]);
 
   const passListRef = useRef<HTMLDivElement>(null);
   const [lbMode, setLbMode] = useState<GameMode>("classic");
