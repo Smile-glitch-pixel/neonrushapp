@@ -1027,18 +1027,19 @@ export default function NeonRush() {
                   </div>
                   <div className="mt-2 text-[10px] uppercase tracking-[0.2em] text-muted-foreground text-center">{tr("passTier100")}</div>
                 </div>
-                <div className="grid grid-cols-2 gap-2 max-h-[50vh] overflow-y-auto">
+                <div ref={passListRef} className="grid grid-cols-2 gap-2 max-h-[50vh] overflow-y-auto">
                   {PASS_REWARDS.map((r, i) => {
                     const unlocked = i < passTier;
                     const claimed = prog.claimed.includes(i);
                     const isFinal = i === PASS_TIERS - 1;
+                    const isCurrent = i === Math.min(passTier, PASS_TIERS - 1);
                     const label =
                       r.type === "coins" ? `${r.value} 🪙` :
                       r.type === "xp" ? `+${r.value} XP` :
                       r.type === "chest" ? `🎁 ×${r.value}` :
                       `✨ ${r.value}`;
                     return (
-                      <div key={i} className={`rounded-xl border p-3 text-center ${isFinal ? "border-[color:var(--neon-magenta)] bg-[color:var(--neon-magenta)]/10" : unlocked ? "border-[color:var(--neon-cyan)]/60 bg-[color:var(--neon-cyan)]/10" : "border-border/40 bg-black/20 opacity-60"}`}>
+                      <div key={i} data-tier={i} className={`rounded-xl border p-3 text-center ${isFinal ? "border-[color:var(--neon-magenta)] bg-[color:var(--neon-magenta)]/10" : unlocked ? "border-[color:var(--neon-cyan)]/60 bg-[color:var(--neon-cyan)]/10" : "border-border/40 bg-black/20 opacity-60"} ${isCurrent ? "ring-2 ring-[color:var(--neon-yellow)]" : ""}`}>
                         <div className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
                           {tr("tier")} {i + 1}{isFinal ? ` · ${tr("exclusive")}` : ""}
                         </div>
