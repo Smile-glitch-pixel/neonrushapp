@@ -57,6 +57,36 @@ export const SKINS: Skin[] = [
 
   // ---------- Exclusive Battle Pass reward ----------
   { id: "eclipse", name: "Eclipse",  price: 0,    colors: ["#ffffff", "#8b5cff", "#0b0620"], rarity: "exclusive", passOnly: true },
+
+  // ---------- Extra Commons ----------
+  { id: "azure",   name: "Azure",    price: 300,  colors: ["#e8f3ff", "#7bb3ff", "#2050c8"], rarity: "common" },
+  { id: "rose",    name: "Rose",     price: 300,  colors: ["#fff0f5", "#ffb0c8", "#e04070"], rarity: "common" },
+  { id: "olive",   name: "Olive",    price: 300,  colors: ["#f5f8d0", "#c8d060", "#6a7a20"], rarity: "common" },
+  { id: "sand",    name: "Sand",     price: 300,  colors: ["#fff5e0", "#f0c88a", "#a06a20"], rarity: "common" },
+  { id: "sky",     name: "Sky",      price: 300,  colors: ["#f0faff", "#a8dcff", "#4a90d6"], rarity: "common" },
+
+  // ---------- Extra Rares ----------
+  { id: "obsidian", name: "Obsidian", price: 900, colors: ["#c8c8d8", "#6a6a80", "#101018"], rarity: "rare" },
+  { id: "topaz",    name: "Topaz",    price: 900, colors: ["#fff8d0", "#ffb060", "#c08020"], rarity: "rare" },
+  { id: "jade",     name: "Jade",     price: 900, colors: ["#d8fff0", "#60d0a0", "#207050"], rarity: "rare" },
+  { id: "cobalt",   name: "Cobalt",   price: 900, colors: ["#e0e8ff", "#6080e8", "#1030a0"], rarity: "rare" },
+  { id: "ruby",     name: "Ruby",     price: 900, colors: ["#ffe0e8", "#ff5070", "#a01030"], rarity: "rare" },
+
+  // ---------- Extra Epics ----------
+  { id: "nebula",  name: "Nebula",   price: 2500, colors: ["#e0d0ff", "#a060ff", "#301060"], rarity: "epic" },
+  { id: "vortex",  name: "Vortex",   price: 2500, colors: ["#d0f0ff", "#40b0e0", "#101040"], rarity: "epic" },
+  { id: "chroma",  name: "Chroma",   price: 2500, colors: ["#ff70a0", "#70e0ff", "#a0ff70"], rarity: "epic" },
+  { id: "arcane",  name: "Arcane",   price: 2500, colors: ["#f0e0ff", "#c080ff", "#4020a0"], rarity: "epic" },
+  { id: "spectre", name: "Spectre",  price: 2500, colors: ["#e0fff8", "#80d8c8", "#204048"], rarity: "epic" },
+
+  // ---------- Extra Legendaries ----------
+  { id: "cosmic",  name: "Cosmic",   price: 0,    colors: ["#ffd0ff", "#8060ff", "#000030"], rarity: "legendary", chestOnly: true },
+  { id: "inferno", name: "Inferno",  price: 0,    colors: ["#fff0c0", "#ff6020", "#800000"], rarity: "legendary", chestOnly: true },
+  { id: "tempest", name: "Tempest",  price: 0,    colors: ["#d8f0ff", "#60a0ff", "#101050"], rarity: "legendary", chestOnly: true },
+  { id: "abyss",   name: "Abyss",    price: 0,    colors: ["#a0e0ff", "#2060a0", "#000010"], rarity: "legendary", chestOnly: true },
+
+  // ---------- Extra Mythic ----------
+  { id: "genesis", name: "Genesis",  price: 0,    colors: ["#ffffff", "#ffd0f0", "#200040"], rarity: "mythic", chestOnly: true },
 ];
 
 /* ---------------- Rarity metadata & FX ---------------- */
