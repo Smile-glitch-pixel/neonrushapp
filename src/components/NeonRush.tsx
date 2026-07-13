@@ -188,6 +188,7 @@ export default function NeonRush() {
   const fetchLbFn = useServerFn(fetchLeaderboard);
   const fetchRankFn = useServerFn(fetchMyRank);
   const pushTimer = useRef<number | null>(null);
+  const passListRef = useRef<HTMLDivElement>(null);
   const [lbMode, setLbMode] = useState<GameMode>("classic");
   type LbRow = { user_id: string; mode: string; score: number; display_name: string | null; equipped_skin: string | null };
   const [lbRows, setLbRows] = useState<LbRow[]>([]);
