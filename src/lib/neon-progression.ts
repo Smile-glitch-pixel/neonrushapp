@@ -127,29 +127,43 @@ export const CHEST_WEIGHTS: Record<Exclude<Rarity, "exclusive">, number> = {
   mythic:    1,
 };
 
-// Draw a chest reward: returns either a new skin id, or `null` to fall back to coins.
-export const drawChestSkin = (ownedIds: SkinId[]): { skin: SkinId; rarity: Rarity } | null => {
+// Coin equivalent when a chest rolls a rarity but the player already owns
+// every skin of that rarity — value scales with rarity so mythic dupes still feel great.
+export const RARITY_COIN_VALUE: Record<Exclude<Rarity, "exclusive">, number> = {
+  common:    120,
+  rare:      350,
+  epic:      900,
+  legendary: 2200,
+  mythic:    6000,
+};
+
+export type ChestReward =
+  | { type: "skin"; skin: SkinId; rarity: Exclude<Rarity, "exclusive"> }
+  | { type: "coins"; coins: number; rarity: Exclude<Rarity, "exclusive"> };
+
+// Roll a chest reward. If the rolled rarity's pool is empty (all owned), the
+// player gets the coin equivalent of THAT rarity instead of rerolling.
+export const rollChestReward = (ownedIds: SkinId[]): ChestReward => {
   const rarities = Object.keys(CHEST_WEIGHTS) as Array<Exclude<Rarity, "exclusive">>;
   const total = rarities.reduce((a, r) => a + CHEST_WEIGHTS[r], 0);
   let roll = Math.random() * total;
   let picked: Exclude<Rarity, "exclusive"> = "common";
   for (const r of rarities) { if (roll < CHEST_WEIGHTS[r]) { picked = r; break; } roll -= CHEST_WEIGHTS[r]; }
-
-  // Try picked rarity first, then descend, then ascend, to always give SOMETHING when possible.
-  const order: Exclude<Rarity, "exclusive">[] = ["mythic", "legendary", "epic", "rare", "common"];
-  const start = order.indexOf(picked);
-  const rotated = [...order.slice(start), ...order.slice(0, start).reverse()];
-  for (const r of rotated) {
-    const pool = SKINS.filter((s) => s.rarity === r && !s.passOnly && !ownedIds.includes(s.id));
-    if (pool.length > 0) {
-      const s = pool[Math.floor(Math.random() * pool.length)];
-      return { skin: s.id, rarity: s.rarity };
-    }
+  const pool = SKINS.filter((s) => s.rarity === picked && !s.passOnly && !ownedIds.includes(s.id));
+  if (pool.length > 0) {
+    const s = pool[Math.floor(Math.random() * pool.length)];
+    return { type: "skin", skin: s.id, rarity: picked };
   }
-  return null;
+  return { type: "coins", coins: RARITY_COIN_VALUE[picked], rarity: picked };
 };
 
-export const CHEST_COST = 400;
+// Kept for backwards-compat; prefer rollChestReward.
+export const drawChestSkin = (ownedIds: SkinId[]): { skin: SkinId; rarity: Rarity } | null => {
+  const r = rollChestReward(ownedIds);
+  return r.type === "skin" ? { skin: r.skin, rarity: r.rarity } : null;
+};
+
+export const CHEST_COST = 500;
 
 export const REWARD_MULT: Record<GameMode, number> = {
   zen: 0.4,
