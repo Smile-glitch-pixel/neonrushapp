@@ -752,21 +752,23 @@ export default function NeonRush() {
   };
   const openChest = () => {
     if (prog.coins < CHEST_COST) { showToast(tr("notEnough")); return; }
-    const drop = drawChestSkin(prog.owned);
+    const reward = rollChestReward(prog.owned);
     setProg((p) => {
       let np = { ...p, coins: p.coins - CHEST_COST };
-      if (drop) {
-        np = { ...np, owned: [...np.owned, drop.skin] };
-        const name = SKINS.find((s) => s.id === drop.skin)?.name ?? drop.skin;
-        showToast(`✨ ${drop.rarity.toUpperCase()} — ${name}`);
-        audioRef.current.power();
+      if (reward.type === "skin") {
+        np = { ...np, owned: [...np.owned, reward.skin] };
+        const name = SKINS.find((s) => s.id === reward.skin)?.name ?? reward.skin;
+        showToast(`✨ ${reward.rarity.toUpperCase()} — ${name}`);
       } else {
-        const bonus = 150 + Math.floor(Math.random() * 400);
-        np = { ...np, coins: np.coins + bonus };
-        showToast(`+${bonus} 🪙`);
+        np = { ...np, coins: np.coins + reward.coins };
+        showToast(`🪙 +${reward.coins} · ${reward.rarity.toUpperCase()} (déjà tout obtenu)`);
       }
       return np;
     });
+    // Rarity-tuned audio
+    if (reward.rarity === "mythic") audioRef.current.mythicSound();
+    else if (reward.rarity === "legendary") audioRef.current.legendarySound();
+    else audioRef.current.power();
   };
 
 
