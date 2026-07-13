@@ -724,6 +724,20 @@ export default function NeonRush() {
   const passTier = Math.min(PASS_TIERS, Math.floor(prog.xp / PASS_XP_PER_TIER));
   const passProgressPct = ((prog.xp % PASS_XP_PER_TIER) / PASS_XP_PER_TIER) * 100;
 
+  // Auto-scroll Battle Pass list to current tier when opening the panel
+  useEffect(() => {
+    if (panel !== "pass") return;
+    const id = window.setTimeout(() => {
+      const list = passListRef.current;
+      if (!list) return;
+      const tier = Math.min(passTier, PASS_TIERS - 1);
+      const el = list.querySelector<HTMLElement>(`[data-tier="${tier}"]`);
+      if (el) list.scrollTo({ top: Math.max(0, el.offsetTop - 80), behavior: "smooth" });
+    }, 80);
+    return () => window.clearTimeout(id);
+  }, [panel, passTier]);
+
+
   const claimTier = (i: number) => {
     if (i >= passTier || prog.claimed.includes(i)) return;
     const reward = PASS_REWARDS[i];
