@@ -4,7 +4,12 @@ export type SkinId =
   | "ghost" | "void" | "aurora" | "solar" | "prism"
   | "rainbow" | "phoenix" | "quantum"
   | "singularity"
-  | "eclipse";
+  | "eclipse"
+  | "azure" | "rose" | "olive" | "sand" | "sky"
+  | "obsidian" | "topaz" | "jade" | "cobalt" | "ruby"
+  | "nebula" | "vortex" | "chroma" | "arcane" | "spectre"
+  | "cosmic" | "inferno" | "tempest" | "abyss"
+  | "genesis";
 
 export type Rarity = "common" | "rare" | "epic" | "legendary" | "mythic" | "exclusive";
 export type GameMode = "classic" | "hardcore" | "zen" | "blitz";
