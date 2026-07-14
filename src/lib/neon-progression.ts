@@ -244,20 +244,9 @@ export const rollChestReward = (
       rarity:random[0] as Exclude<Rarity,"exclusive">
     };
 
-  }
-
-
-
-  // Tirage rareté skin
-
-  const rarities =
-  Object.keys(CHEST_WEIGHTS)
-  as Array<Exclude<Rarity,"exclusive">>;
-
-
-
-  let roll =
-  Math.random()*100;
+const rarities = Object.keys(CHEST_WEIGHTS) as Array<
+  Exclude<Rarity, "exclusive">
+>;
 
 
   let rarity:
