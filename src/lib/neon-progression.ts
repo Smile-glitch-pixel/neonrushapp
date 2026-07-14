@@ -299,13 +299,27 @@ return reward.type==="skin"
 
 export const CHEST_COST = 500;
 
-export const REWARD_MULT: Record<GameMode, number> = {
-  zen: 0.4,
-  classic: 1,
-  blitz: 1.2,
-  hardcore: 1.7,
-};
+export const REWARD_MULT:
+Record<GameMode,number> = {
 
+
+  // Mode Zen
+  zen:0.5,
+
+
+  // Mode Classique
+  classic:1,
+
+
+  // Plus rapide
+  blitz:1.35,
+
+
+  // Très difficile
+  hardcore:1.8,
+
+
+};
 export const MODES: { id: GameMode; nameKey: string; descKey: string }[] = [
   { id: "classic", nameKey: "modeClassic", descKey: "modeClassicDesc" },
   { id: "hardcore", nameKey: "modeHardcore", descKey: "modeHardcoreDesc" },
