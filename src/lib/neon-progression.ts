@@ -244,11 +244,6 @@ export const rollChestReward = (
       rarity:random[0] as Exclude<Rarity,"exclusive">
     };
 
-const rarities = Object.keys(CHEST_WEIGHTS) as Array<
-  Exclude<Rarity, "exclusive">
->;
-
-
   let rarity:
   Exclude<Rarity,"exclusive">
   ="common";
