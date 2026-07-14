@@ -116,52 +116,186 @@ export const RARITY_FX: Record<Rarity, SkinFx> = {
   exclusive: { trailLen: 55, particles: 2.0, pulse: 0.08, aura: 1.7, soundBoost: 0.5 },
 };
 
-/* ---------------- Chest drop weights ---------------- */
-// Chances of drawing a skin of each rarity from a chest.
-// passOnly (Exclusive) is NEVER dropped by chests.
-export const CHEST_WEIGHTS: Record<Exclude<Rarity, "exclusive">, number> = {
-  common:    55,
-  rare:      27,
-  epic:      12,
-  legendary: 5,
-  mythic:    1,
+/* ---------------- Chest rewards ---------------- */
+
+// 50% chance d'obtenir des pièces
+// 50% chance d'obtenir un skin
+
+export const CHEST_SKIN_CHANCE = 0.5;
+
+export const CHEST_WEIGHTS: Record<Exclude<Rarity,"exclusive">,number> = {
+
+  common:55,
+  rare:28,
+  epic:12,
+  legendary:4,
+  mythic:1,
+
 };
 
-// Coin equivalent when a chest rolls a rarity but the player already owns
-// every skin of that rarity — value scales with rarity so mythic dupes still feel great.
-export const RARITY_COIN_VALUE: Record<Exclude<Rarity, "exclusive">, number> = {
-  common:    120,
-  rare:      350,
-  epic:      900,
-  legendary: 2200,
-  mythic:    6000,
+
+export const RARITY_COIN_VALUE:
+Record<Exclude<Rarity,"exclusive">,number> = {
+
+  common:150,
+  rare:400,
+  epic:1000,
+  legendary:2500,
+  mythic:7000,
+
 };
+
+
 
 export type ChestReward =
-  | { type: "skin"; skin: SkinId; rarity: Exclude<Rarity, "exclusive"> }
-  | { type: "coins"; coins: number; rarity: Exclude<Rarity, "exclusive"> };
-
-// Roll a chest reward. If the rolled rarity's pool is empty (all owned), the
-// player gets the coin equivalent of THAT rarity instead of rerolling.
-export const rollChestReward = (ownedIds: SkinId[]): ChestReward => {
-  const rarities = Object.keys(CHEST_WEIGHTS) as Array<Exclude<Rarity, "exclusive">>;
-  const total = rarities.reduce((a, r) => a + CHEST_WEIGHTS[r], 0);
-  let roll = Math.random() * total;
-  let picked: Exclude<Rarity, "exclusive"> = "common";
-  for (const r of rarities) { if (roll < CHEST_WEIGHTS[r]) { picked = r; break; } roll -= CHEST_WEIGHTS[r]; }
-  const pool = SKINS.filter((s) => s.rarity === picked && !s.passOnly && !ownedIds.includes(s.id));
-  if (pool.length > 0) {
-    const s = pool[Math.floor(Math.random() * pool.length)];
-    return { type: "skin", skin: s.id, rarity: picked };
+| {
+    type:"skin";
+    skin:SkinId;
+    rarity:Exclude<Rarity,"exclusive">;
   }
-  return { type: "coins", coins: RARITY_COIN_VALUE[picked], rarity: picked };
+| {
+    type:"coins";
+    coins:number;
+    rarity:Exclude<Rarity,"exclusive">;
 };
 
-// Kept for backwards-compat; prefer rollChestReward.
-export const drawChestSkin = (ownedIds: SkinId[]): { skin: SkinId; rarity: Rarity } | null => {
-  const r = rollChestReward(ownedIds);
-  return r.type === "skin" ? { skin: r.skin, rarity: r.rarity } : null;
+
+
+export const rollChestReward = (
+  ownedIds:SkinId[]
+):ChestReward=>{
+
+
+  // 50% pièces directement
+  if(Math.random() > CHEST_SKIN_CHANCE)
+  {
+
+    const values =
+    Object.entries(RARITY_COIN_VALUE);
+
+    const random =
+    values[
+      Math.floor(
+        Math.random()*values.length
+      )
+    ];
+
+
+    return {
+      type:"coins",
+      coins:random[1],
+      rarity:random[0] as Exclude<Rarity,"exclusive">
+    };
+
+  }
+
+
+
+  // Tirage rareté skin
+
+  const rarities =
+  Object.keys(CHEST_WEIGHTS)
+  as Array<Exclude<Rarity,"exclusive">>;
+
+
+
+  let roll =
+  Math.random()*100;
+
+
+  let rarity:
+  Exclude<Rarity,"exclusive">
+  ="common";
+
+
+  for(const r of rarities)
+  {
+
+    roll -= CHEST_WEIGHTS[r];
+
+    if(roll<=0)
+    {
+      rarity=r;
+      break;
+    }
+
+  }
+
+
+
+  const available =
+  SKINS.filter(
+    s =>
+    s.rarity===rarity &&
+    !s.chestOnly===false &&
+    !ownedIds.includes(s.id)
+  );
+
+
+
+  if(available.length)
+  {
+
+    const skin =
+    available[
+      Math.floor(
+        Math.random()*available.length
+      )
+    ];
+
+
+    return {
+      type:"skin",
+      skin:skin.id,
+      rarity
+    };
+
+  }
+
+
+
+  // Si tous les skins sont possédés
+  return {
+
+    type:"coins",
+
+    coins:
+    RARITY_COIN_VALUE[rarity],
+
+    rarity
+
+  };
+
 };
+
+
+
+export const drawChestSkin =
+(
+ownedIds:SkinId[]
+):
+{
+skin:SkinId;
+rarity:Rarity
+}|null=>{
+
+
+const reward =
+rollChestReward(ownedIds);
+
+
+return reward.type==="skin"
+?
+{
+ skin:reward.skin,
+ rarity:reward.rarity
+}
+:null;
+
+
+};
+
+
 
 export const CHEST_COST = 500;
 
