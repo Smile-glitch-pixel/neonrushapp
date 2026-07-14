@@ -107,13 +107,70 @@ export type SkinFx = {
   aura: number;          // outer aura radius multiplier (0 = none)
   soundBoost: number;    // extra tone layered on pickup (0 = none)
 };
-export const RARITY_FX: Record<Rarity, SkinFx> = {
-  common:    { trailLen: 22, particles: 1,   pulse: 0,    aura: 0,   soundBoost: 0 },
-  rare:      { trailLen: 34, particles: 1.4, pulse: 0.03, aura: 0,   soundBoost: 0 },
-  epic:      { trailLen: 44, particles: 1.8, pulse: 0.06, aura: 1.4, soundBoost: 0.3 },
-  legendary: { trailLen: 60, particles: 2.3, pulse: 0.09, aura: 1.9, soundBoost: 0.6 },
-  mythic:    { trailLen: 80, particles: 3.0, pulse: 0.12, aura: 2.6, soundBoost: 1.0 },
-  exclusive: { trailLen: 55, particles: 2.0, pulse: 0.08, aura: 1.7, soundBoost: 0.5 },
+export const RARITY_FX:
+Record<Rarity,SkinFx> = {
+
+
+common:
+{
+ trailLen:20,
+ particles:1,
+ pulse:0,
+ aura:0,
+ soundBoost:0
+},
+
+
+rare:
+{
+ trailLen:35,
+ particles:1.5,
+ pulse:0.03,
+ aura:0.2,
+ soundBoost:0.1
+},
+
+
+epic:
+{
+ trailLen:50,
+ particles:2,
+ pulse:0.06,
+ aura:1.3,
+ soundBoost:0.3
+},
+
+
+legendary:
+{
+ trailLen:70,
+ particles:3,
+ pulse:0.1,
+ aura:2,
+ soundBoost:0.7
+},
+
+
+mythic:
+{
+ trailLen:100,
+ particles:4,
+ pulse:0.15,
+ aura:3,
+ soundBoost:1.2
+},
+
+
+exclusive:
+{
+ trailLen:80,
+ particles:3,
+ pulse:0.12,
+ aura:2.5,
+ soundBoost:1
+}
+
+
 };
 
 /* ---------------- Chest rewards ---------------- */
