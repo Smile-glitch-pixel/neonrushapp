@@ -14,6 +14,47 @@ export type Database = {
   }
   public: {
     Tables: {
+      duo_matches: {
+        Row: {
+          created_at: string
+          guest_id: string | null
+          guest_score: number
+          host_id: string
+          host_score: number
+          id: string
+          room_id: string | null
+          winner_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          guest_id?: string | null
+          guest_score?: number
+          host_id: string
+          host_score?: number
+          id?: string
+          room_id?: string | null
+          winner_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          guest_id?: string | null
+          guest_score?: number
+          host_id?: string
+          host_score?: number
+          id?: string
+          room_id?: string | null
+          winner_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "duo_matches_room_id_fkey"
+            columns: ["room_id"]
+            isOneToOne: true
+            referencedRelation: "rooms"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       leaderboard_scores: {
         Row: {
           created_at: string
@@ -107,12 +148,104 @@ export type Database = {
         }
         Relationships: []
       }
+      room_players: {
+        Row: {
+          display_name: string | null
+          equipped_skin: string | null
+          finished: boolean
+          id: string
+          is_host: boolean
+          joined_at: string
+          room_id: string
+          score: number
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          display_name?: string | null
+          equipped_skin?: string | null
+          finished?: boolean
+          id?: string
+          is_host?: boolean
+          joined_at?: string
+          room_id: string
+          score?: number
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          display_name?: string | null
+          equipped_skin?: string | null
+          finished?: boolean
+          id?: string
+          is_host?: boolean
+          joined_at?: string
+          room_id?: string
+          score?: number
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "room_players_room_id_fkey"
+            columns: ["room_id"]
+            isOneToOne: false
+            referencedRelation: "rooms"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      rooms: {
+        Row: {
+          code: string
+          created_at: string
+          duration_s: number
+          ends_at: string | null
+          host_id: string
+          id: string
+          started_at: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          code: string
+          created_at?: string
+          duration_s?: number
+          ends_at?: string | null
+          host_id: string
+          id?: string
+          started_at?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          code?: string
+          created_at?: string
+          duration_s?: number
+          ends_at?: string | null
+          host_id?: string
+          id?: string
+          started_at?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      duo_cleanup: { Args: never; Returns: undefined }
+      duo_create_room: {
+        Args: { _name: string; _skin: string }
+        Returns: string
+      }
+      duo_is_member: { Args: { _room: string; _uid: string }; Returns: boolean }
+      duo_join_room: {
+        Args: { _code: string; _name: string; _skin: string }
+        Returns: string
+      }
     }
     Enums: {
       [_ in never]: never
