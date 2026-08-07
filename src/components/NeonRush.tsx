@@ -199,7 +199,18 @@ export default function NeonRush() {
   const [myRank, setMyRank] = useState<{ score: number; rank: number | null; total: number } | null>(null);
   const [lbLoading, setLbLoading] = useState(false);
 
-  // Hydration-safe: load lang and prog after mount
+  // ---- DUO (online 1v1) ----
+  const [duoCode, setDuoCode] = useState("");
+  const duo = useDuo({
+    userId: user?.id ?? null,
+    displayName: prog.displayName ?? user?.email?.split("@")[0] ?? null,
+    equippedSkin: prog.equipped,
+  });
+  const duoEndRef = useRef<(score: number) => void>(() => { /* set below */ });
+  const duoDoneRef = useRef<string | null>(null);
+  const duoRewardedRef = useRef<string | null>(null);
+
+
   useEffect(() => {
     const l = (localStorage.getItem(LANG_KEY) as Lang) || (navigator.language.startsWith("es") ? "es" : navigator.language.startsWith("fr") ? "fr" : "en");
     setLang(l);
