@@ -38,7 +38,7 @@ export const duoCreateRoom = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { data: roomId, error } = await context.supabase.rpc("duo_create_room", {
       _name: data.display_name ?? "Player",
-      _skin: data.equipped_skin ?? null,
+      _skin: data.equipped_skin ?? "cyan",
     });
     if (error) throw error;
     return await readRoom(context.supabase, roomId as unknown as string);
@@ -60,7 +60,7 @@ export const duoJoinRoom = createServerFn({ method: "POST" })
     const { data: roomId, error } = await context.supabase.rpc("duo_join_room", {
       _code: data.code.trim().toUpperCase(),
       _name: data.display_name ?? "Player",
-      _skin: data.equipped_skin ?? null,
+      _skin: data.equipped_skin ?? "cyan",
     });
     if (error) {
       const msg = error.message || "";
