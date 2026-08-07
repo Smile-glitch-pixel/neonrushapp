@@ -914,12 +914,18 @@ export default function NeonRush() {
           <div className="mt-1 text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
             {tr("best")} : <span className="text-glow-yellow">{best}</span>
           </div>
-          {running && mode === "blitz" && (
+          {running && (mode === "blitz" || duoActive) && (
             <div className="mt-1 text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
               {tr("time")} : <span className="text-glow-magenta">{timeLeft}s</span>
             </div>
           )}
+          {duoActive && (
+            <div className="mt-1 text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+              ⚔ {tr("duoOpponent")} : <span className="text-glow-magenta tabular-nums">{duo.opponent?.score ?? 0}</span>
+            </div>
+          )}
         </div>
+
 
         <div className="flex flex-col items-end gap-2">
           <button onClick={() => setMuted((m) => !m)} className="panel-neon pointer-events-auto rounded-lg px-3 py-2 text-xs font-bold uppercase tracking-widest text-glow-cyan transition hover:scale-105">
