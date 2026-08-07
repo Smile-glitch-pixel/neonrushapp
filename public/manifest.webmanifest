@@ -1,0 +1,15 @@
+{
+  "name": "NEON RUSH",
+  "short_name": "NEON RUSH",
+  "description": "Arcade néon infini : esquive, collecte, enchaîne des combos et grimpe au classement mondial.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#05030f",
+  "theme_color": "#05030f",
+  "icons": [
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
