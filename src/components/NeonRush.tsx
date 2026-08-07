@@ -556,7 +556,9 @@ export default function NeonRush() {
       s.over = true; s.running = false;
       audioRef.current.gameover();
       const fs = Math.floor(s.score);
-      setScore(fs); setGameOver(true); setRunning(false);
+      setScore(fs); setRunning(false);
+      if (s.duo) { setGameOver(false); duoEndRef.current(fs); return; }
+      setGameOver(true);
       finishRun(fs, s.mode, s.maxCombo);
     };
 
