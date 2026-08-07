@@ -329,9 +329,10 @@ export default function NeonRush() {
     skinRarity: equippedSkin.rarity as Rarity,
     duration: 0,
     runOrbs: 0, runPowers: 0,
+    duo: false,
   });
 
-  const start = useCallback(async (m: GameMode) => {
+  const start = useCallback(async (m: GameMode, opts?: { duo?: boolean; durationMs?: number }) => {
     await audioRef.current.start();
     const s = stateRef.current;
     s.entities = []; s.particles = [];
@@ -343,16 +344,65 @@ export default function NeonRush() {
     s.powers = { shield: 0, slow: 0, magnet: 0, x2: 0 };
     s.over = false; s.running = true; s.difficulty = m === "hardcore" ? 1.5 : 1;
     s.mode = m;
+    s.duo = !!opts?.duo;
     const sk = SKINS.find((k) => k.id === prog.equipped) || SKINS[0];
     s.skinColors = sk.colors as [string, string, string];
     s.skinFx = RARITY_FX[sk.rarity];
     s.skinRarity = sk.rarity;
-    s.duration = m === "blitz" ? 60000 : 0;
+    s.duration = opts?.durationMs ?? (m === "blitz" ? 60000 : 0);
     setMode(m); setScore(0); setCombo(0);
     setPowers({ shield: 0, slow: 0, magnet: 0, x2: 0 });
-    setTimeLeft(m === "blitz" ? 60 : 0);
+    setTimeLeft(s.duration > 0 ? Math.ceil(s.duration / 1000) : 0);
     setGameOver(false); setRunning(true); setPanel(null); setRewardEarned(null);
   }, [prog.equipped]);
+
+  /* ---- Duo orchestration: the network never touches the render loop ---- */
+  const duoActive = !!duo.room && duo.room.status === "playing";
+
+  // Both clients auto-launch when the host starts the duel (server clock = ends_at)
+  useEffect(() => {
+    const r = duo.room;
+    if (!r || r.status !== "playing" || running) return;
+    if (duoDoneRef.current === r.id) return;
+    const left = r.ends_at ? new Date(r.ends_at).getTime() - Date.now() : r.duration_s * 1000;
+    if (left <= 800) return;
+    start("classic", { duo: true, durationMs: left });
+  }, [duo.room, running, start]);
+
+  // Live score sync (server-validated, throttled — no FPS impact)
+  const duoPush = duo.pushScore;
+  useEffect(() => {
+    if (!duoActive || !running) return;
+    const id = window.setInterval(() => duoPush(stateRef.current.score), 1200);
+    return () => window.clearInterval(id);
+  }, [duoActive, running, duoPush]);
+
+  // End of duel run → hand the final score to the server, which decides the winner
+  duoEndRef.current = (finalScore: number) => {
+    duoDoneRef.current = duo.room?.id ?? null;
+    setPanel("duo");
+    duo.finish(finalScore);
+  };
+
+  // Duo rewards (coins + Battle Pass XP) once the server has settled the match
+  useEffect(() => {
+    const res = duo.result; const room = duo.room;
+    if (!res || !room) return;
+    if (duoRewardedRef.current === room.id) return;
+    duoRewardedRef.current = room.id;
+    const coins = res.result === "win" ? 300 : res.result === "draw" ? 180 : 120;
+    const xp = res.result === "win" ? 400 : res.result === "draw" ? 250 : 150;
+    setProg((p) => ({ ...p, coins: p.coins + coins, xp: p.xp + xp }));
+    const s = stateRef.current;
+    applyRunRef.current({
+      runs: 1, blitzRuns: 0, score: res.myScore, hardcoreScore: 0,
+      combo: s.maxCombo, orbs: s.runOrbs || 0, powers: s.runPowers || 0,
+    }, "classic");
+    setToast(`+${coins} 🪙 · +${xp} XP`);
+    setTimeout(() => setToast(""), 2400);
+  }, [duo.result, duo.room]);
+
+
 
 
   // Input — Pointer Events for zero-latency touch/mouse tracking
