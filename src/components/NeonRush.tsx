@@ -1040,6 +1040,7 @@ export default function NeonRush() {
               <button onClick={() => setPanel("missions")} className="panel-neon rounded-lg py-2 text-glow-cyan hover:scale-105 transition">{tr("missions")}</button>
               <button onClick={() => setPanel("leaderboard")} className="panel-neon rounded-lg py-2 text-glow-yellow hover:scale-105 transition">🌍 {tr("leaderboard")}</button>
               <button onClick={() => setPanel("ranked")} className="panel-neon rounded-lg py-2 text-glow-cyan hover:scale-105 transition">{tr("ranked")}</button>
+              <button onClick={() => setPanel("duo")} className="panel-neon rounded-lg py-2 text-glow-magenta hover:scale-105 transition col-span-2 sm:col-span-3">⚔ {tr("duo")}</button>
               <button onClick={() => setPanel("settings")} className="panel-neon rounded-lg py-2 text-glow-magenta hover:scale-105 transition col-span-2 sm:col-span-3">{tr("settings")}</button>
             </div>
 
