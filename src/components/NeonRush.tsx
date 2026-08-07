@@ -10,6 +10,8 @@ import {
 } from "@/lib/neon-progression";
 import { supabase } from "@/integrations/supabase/client";
 import { pullPlayerState, pushPlayerState } from "@/lib/player-sync.functions";
+import { useDuo } from "@/hooks/useDuo";
+import DuoLobby from "@/components/DuoLobby";
 import { mergeProg, progToRemote } from "@/lib/prog-sync";
 import { submitScore, fetchLeaderboard, fetchMyRank } from "@/lib/leaderboard.functions";
 
@@ -178,7 +180,7 @@ export default function NeonRush() {
   const [timeLeft, setTimeLeft] = useState(0);
   const [rewardEarned, setRewardEarned] = useState<{ coins: number; xp: number; skin?: SkinId } | null>(null);
   const [toast, setToast] = useState<string>("");
-  const [panel, setPanel] = useState<null | "modes" | "skins" | "pass" | "ranked" | "settings" | "leaderboard" | "missions">(null);
+  const [panel, setPanel] = useState<null | "modes" | "skins" | "pass" | "ranked" | "settings" | "leaderboard" | "missions" | "duo">(null);
   const [powers, setPowers] = useState<{ shield: number; slow: number; magnet: number; x2: number }>({ shield: 0, slow: 0, magnet: 0, x2: 0 });
   const [user, setUser] = useState<{ id: string; email: string | null } | null>(null);
   const [hydrated, setHydrated] = useState(false);
@@ -197,7 +199,18 @@ export default function NeonRush() {
   const [myRank, setMyRank] = useState<{ score: number; rank: number | null; total: number } | null>(null);
   const [lbLoading, setLbLoading] = useState(false);
 
-  // Hydration-safe: load lang and prog after mount
+  // ---- DUO (online 1v1) ----
+  const [duoCode, setDuoCode] = useState("");
+  const duo = useDuo({
+    userId: user?.id ?? null,
+    displayName: prog.displayName ?? user?.email?.split("@")[0] ?? null,
+    equippedSkin: prog.equipped,
+  });
+  const duoEndRef = useRef<(score: number) => void>(() => { /* set below */ });
+  const duoDoneRef = useRef<string | null>(null);
+  const duoRewardedRef = useRef<string | null>(null);
+
+
   useEffect(() => {
     const l = (localStorage.getItem(LANG_KEY) as Lang) || (navigator.language.startsWith("es") ? "es" : navigator.language.startsWith("fr") ? "fr" : "en");
     setLang(l);
@@ -316,9 +329,10 @@ export default function NeonRush() {
     skinRarity: equippedSkin.rarity as Rarity,
     duration: 0,
     runOrbs: 0, runPowers: 0,
+    duo: false,
   });
 
-  const start = useCallback(async (m: GameMode) => {
+  const start = useCallback(async (m: GameMode, opts?: { duo?: boolean; durationMs?: number }) => {
     await audioRef.current.start();
     const s = stateRef.current;
     s.entities = []; s.particles = [];
@@ -330,16 +344,65 @@ export default function NeonRush() {
     s.powers = { shield: 0, slow: 0, magnet: 0, x2: 0 };
     s.over = false; s.running = true; s.difficulty = m === "hardcore" ? 1.5 : 1;
     s.mode = m;
+    s.duo = !!opts?.duo;
     const sk = SKINS.find((k) => k.id === prog.equipped) || SKINS[0];
     s.skinColors = sk.colors as [string, string, string];
     s.skinFx = RARITY_FX[sk.rarity];
     s.skinRarity = sk.rarity;
-    s.duration = m === "blitz" ? 60000 : 0;
+    s.duration = opts?.durationMs ?? (m === "blitz" ? 60000 : 0);
     setMode(m); setScore(0); setCombo(0);
     setPowers({ shield: 0, slow: 0, magnet: 0, x2: 0 });
-    setTimeLeft(m === "blitz" ? 60 : 0);
+    setTimeLeft(s.duration > 0 ? Math.ceil(s.duration / 1000) : 0);
     setGameOver(false); setRunning(true); setPanel(null); setRewardEarned(null);
   }, [prog.equipped]);
+
+  /* ---- Duo orchestration: the network never touches the render loop ---- */
+  const duoActive = !!duo.room && duo.room.status === "playing";
+
+  // Both clients auto-launch when the host starts the duel (server clock = ends_at)
+  useEffect(() => {
+    const r = duo.room;
+    if (!r || r.status !== "playing" || running) return;
+    if (duoDoneRef.current === r.id) return;
+    const left = r.ends_at ? new Date(r.ends_at).getTime() - Date.now() : r.duration_s * 1000;
+    if (left <= 800) return;
+    start("classic", { duo: true, durationMs: left });
+  }, [duo.room, running, start]);
+
+  // Live score sync (server-validated, throttled — no FPS impact)
+  const duoPush = duo.pushScore;
+  useEffect(() => {
+    if (!duoActive || !running) return;
+    const id = window.setInterval(() => duoPush(stateRef.current.score), 1200);
+    return () => window.clearInterval(id);
+  }, [duoActive, running, duoPush]);
+
+  // End of duel run → hand the final score to the server, which decides the winner
+  duoEndRef.current = (finalScore: number) => {
+    duoDoneRef.current = duo.room?.id ?? null;
+    setPanel("duo");
+    duo.finish(finalScore);
+  };
+
+  // Duo rewards (coins + Battle Pass XP) once the server has settled the match
+  useEffect(() => {
+    const res = duo.result; const room = duo.room;
+    if (!res || !room) return;
+    if (duoRewardedRef.current === room.id) return;
+    duoRewardedRef.current = room.id;
+    const coins = res.result === "win" ? 300 : res.result === "draw" ? 180 : 120;
+    const xp = res.result === "win" ? 400 : res.result === "draw" ? 250 : 150;
+    setProg((p) => ({ ...p, coins: p.coins + coins, xp: p.xp + xp }));
+    const s = stateRef.current;
+    applyRunRef.current({
+      runs: 1, blitzRuns: 0, score: res.myScore, hardcoreScore: 0,
+      combo: s.maxCombo, orbs: s.runOrbs || 0, powers: s.runPowers || 0,
+    }, "classic");
+    setToast(`+${coins} 🪙 · +${xp} XP`);
+    setTimeout(() => setToast(""), 2400);
+  }, [duo.result, duo.room]);
+
+
 
 
   // Input — Pointer Events for zero-latency touch/mouse tracking
@@ -493,7 +556,9 @@ export default function NeonRush() {
       s.over = true; s.running = false;
       audioRef.current.gameover();
       const fs = Math.floor(s.score);
-      setScore(fs); setGameOver(true); setRunning(false);
+      setScore(fs); setRunning(false);
+      if (s.duo) { setGameOver(false); duoEndRef.current(fs); return; }
+      setGameOver(true);
       finishRun(fs, s.mode, s.maxCombo);
     };
 
@@ -849,12 +914,18 @@ export default function NeonRush() {
           <div className="mt-1 text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
             {tr("best")} : <span className="text-glow-yellow">{best}</span>
           </div>
-          {running && mode === "blitz" && (
+          {running && (mode === "blitz" || duoActive) && (
             <div className="mt-1 text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
               {tr("time")} : <span className="text-glow-magenta">{timeLeft}s</span>
             </div>
           )}
+          {duoActive && (
+            <div className="mt-1 text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+              ⚔ {tr("duoOpponent")} : <span className="text-glow-magenta tabular-nums">{duo.opponent?.score ?? 0}</span>
+            </div>
+          )}
         </div>
+
 
         <div className="flex flex-col items-end gap-2">
           <button onClick={() => setMuted((m) => !m)} className="panel-neon pointer-events-auto rounded-lg px-3 py-2 text-xs font-bold uppercase tracking-widest text-glow-cyan transition hover:scale-105">
@@ -969,6 +1040,7 @@ export default function NeonRush() {
               <button onClick={() => setPanel("missions")} className="panel-neon rounded-lg py-2 text-glow-cyan hover:scale-105 transition">{tr("missions")}</button>
               <button onClick={() => setPanel("leaderboard")} className="panel-neon rounded-lg py-2 text-glow-yellow hover:scale-105 transition">🌍 {tr("leaderboard")}</button>
               <button onClick={() => setPanel("ranked")} className="panel-neon rounded-lg py-2 text-glow-cyan hover:scale-105 transition">{tr("ranked")}</button>
+              <button onClick={() => setPanel("duo")} className="panel-neon rounded-lg py-2 text-glow-magenta hover:scale-105 transition col-span-2 sm:col-span-3">⚔ {tr("duo")}</button>
               <button onClick={() => setPanel("settings")} className="panel-neon rounded-lg py-2 text-glow-magenta hover:scale-105 transition col-span-2 sm:col-span-3">{tr("settings")}</button>
             </div>
 
@@ -1165,6 +1237,18 @@ export default function NeonRush() {
                   {tr("best")}: {Math.max(...Object.values(prog.bestByMode))}
                 </div>
               </div>
+            )}
+
+            {panel === "duo" && (
+              <DuoLobby
+                duo={duo}
+                tr={tr}
+                signedIn={!!user}
+                code={duoCode}
+                setCode={setDuoCode}
+                onCopy={(c) => { navigator.clipboard?.writeText(c).catch(() => { /* noop */ }); showToast(tr("duoCopied")); }}
+                onClose={() => setPanel(null)}
+              />
             )}
 
             {panel === "settings" && (
