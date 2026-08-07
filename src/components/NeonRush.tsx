@@ -10,6 +10,8 @@ import {
 } from "@/lib/neon-progression";
 import { supabase } from "@/integrations/supabase/client";
 import { pullPlayerState, pushPlayerState } from "@/lib/player-sync.functions";
+import { useDuo } from "@/hooks/useDuo";
+import DuoLobby from "@/components/DuoLobby";
 import { mergeProg, progToRemote } from "@/lib/prog-sync";
 import { submitScore, fetchLeaderboard, fetchMyRank } from "@/lib/leaderboard.functions";
 
