@@ -180,7 +180,7 @@ export default function NeonRush() {
   const [timeLeft, setTimeLeft] = useState(0);
   const [rewardEarned, setRewardEarned] = useState<{ coins: number; xp: number; skin?: SkinId } | null>(null);
   const [toast, setToast] = useState<string>("");
-  const [panel, setPanel] = useState<null | "modes" | "skins" | "pass" | "ranked" | "settings" | "leaderboard" | "missions">(null);
+  const [panel, setPanel] = useState<null | "modes" | "skins" | "pass" | "ranked" | "settings" | "leaderboard" | "missions" | "duo">(null);
   const [powers, setPowers] = useState<{ shield: number; slow: number; magnet: number; x2: number }>({ shield: 0, slow: 0, magnet: 0, x2: 0 });
   const [user, setUser] = useState<{ id: string; email: string | null } | null>(null);
   const [hydrated, setHydrated] = useState(false);
