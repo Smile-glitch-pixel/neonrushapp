@@ -1239,6 +1239,18 @@ export default function NeonRush() {
               </div>
             )}
 
+            {panel === "duo" && (
+              <DuoLobby
+                duo={duo}
+                tr={tr}
+                signedIn={!!user}
+                code={duoCode}
+                setCode={setDuoCode}
+                onCopy={(c) => { navigator.clipboard?.writeText(c).catch(() => { /* noop */ }); showToast(tr("duoCopied")); }}
+                onClose={() => setPanel(null)}
+              />
+            )}
+
             {panel === "settings" && (
               <div>
                 <div className="text-xs uppercase tracking-[0.2em] text-muted-foreground mb-2">{tr("language")}</div>
