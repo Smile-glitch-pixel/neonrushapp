@@ -8,7 +8,7 @@ export type RemoteState = {
   owned: string[];
   equipped: string;
   best_by_mode: Record<GameMode, number>;
-  settings?: Record<string, unknown> & { missions?: MissionsData; displayName?: string };
+  settings?: Record<string, unknown> & { missions?: MissionsData; displayName?: string; duoBest?: number; duoRevives?: number };
 };
 
 export const mergeProg = (local: Progression, remote: RemoteState | null | undefined): Progression => {
@@ -48,6 +48,8 @@ export const mergeProg = (local: Progression, remote: RemoteState | null | undef
     bestByMode,
     missions,
     displayName: remote.settings?.displayName || local.displayName,
+    duoBest: Math.max(local.duoBest ?? 0, remote.settings?.duoBest ?? 0),
+    duoRevives: Math.max(local.duoRevives ?? 0, remote.settings?.duoRevives ?? 0),
   };
 };
 
@@ -58,5 +60,5 @@ export const progToRemote = (p: Progression): RemoteState => ({
   owned: p.owned,
   equipped: p.equipped,
   best_by_mode: p.bestByMode,
-  settings: { missions: p.missions, displayName: p.displayName },
+  settings: { missions: p.missions, displayName: p.displayName, duoBest: p.duoBest ?? 0, duoRevives: p.duoRevives ?? 0 },
 });

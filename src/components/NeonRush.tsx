@@ -199,16 +199,20 @@ export default function NeonRush() {
   const [myRank, setMyRank] = useState<{ score: number; rank: number | null; total: number } | null>(null);
   const [lbLoading, setLbLoading] = useState(false);
 
-  // ---- DUO (online 1v1) ----
+  // ---- DUO COOP (2 joueurs, une équipe, un objectif commun) ----
+  const DUO_DOWN_MS = 10000;
   const [duoCode, setDuoCode] = useState("");
+  const [duoDownMs, setDuoDownMs] = useState(0);
   const duo = useDuo({
     userId: user?.id ?? null,
     displayName: prog.displayName ?? user?.email?.split("@")[0] ?? null,
     equippedSkin: prog.equipped,
   });
   const duoEndRef = useRef<(score: number) => void>(() => { /* set below */ });
+  const duoDownRef = useRef<() => void>(() => { /* set below */ });
   const duoDoneRef = useRef<string | null>(null);
   const duoRewardedRef = useRef<string | null>(null);
+
 
 
   useEffect(() => {
@@ -356,20 +360,23 @@ export default function NeonRush() {
     setGameOver(false); setRunning(true); setPanel(null); setRewardEarned(null);
   }, [prog.equipped]);
 
-  /* ---- Duo orchestration: the network never touches the render loop ---- */
+  /* ---- Duo COOP orchestration: the network never touches the render loop ---- */
   const duoActive = !!duo.room && duo.room.status === "playing";
+  const duoTeamScore = Math.max(duo.teamScore, score + (duo.partner?.score ?? 0));
 
-  // Both clients auto-launch when the host starts the duel (server clock = ends_at)
+  // Les deux alliés démarrent ensemble (chrono serveur partagé = ends_at)
   useEffect(() => {
     const r = duo.room;
     if (!r || r.status !== "playing" || running) return;
     if (duoDoneRef.current === r.id) return;
     const left = r.ends_at ? new Date(r.ends_at).getTime() - Date.now() : r.duration_s * 1000;
     if (left <= 800) return;
+    duo.beginRun();
+    setDuoDownMs(0);
     start("classic", { duo: true, durationMs: left });
-  }, [duo.room, running, start]);
+  }, [duo.room, duo.beginRun, running, start]);
 
-  // Live score sync (server-validated, throttled — no FPS impact)
+  // Contribution au score d'équipe (validée serveur, throttlée — aucun impact FPS)
   const duoPush = duo.pushScore;
   useEffect(() => {
     if (!duoActive || !running) return;
@@ -377,30 +384,79 @@ export default function NeonRush() {
     return () => window.clearInterval(id);
   }, [duoActive, running, duoPush]);
 
-  // End of duel run → hand the final score to the server, which decides the winner
-  duoEndRef.current = (finalScore: number) => {
-    duoDoneRef.current = duo.room?.id ?? null;
-    setPanel("duo");
-    duo.finish(finalScore);
+  // Le joueur tombe à terre : la partie continue, l'allié peut le réanimer
+  duoDownRef.current = () => {
+    const s = stateRef.current;
+    s.running = false;
+    setDuoDownMs(DUO_DOWN_MS);
+    duo.goDown(DUO_DOWN_MS);
   };
 
-  // Duo rewards (coins + Battle Pass XP) once the server has settled the match
+  // Fin de vie définitive : le serveur ne clôture que si toute l'équipe est éliminée
+  duoEndRef.current = (finalScore: number) => {
+    duoDoneRef.current = duo.room?.id ?? null;
+    setDuoDownMs(0);
+    setRunning(false);
+    setPanel("duo");
+    duo.endRun(finalScore);
+  };
+
+  // Compte à rebours de réanimation (affichage local, l'autorité reste au serveur)
+  const meState = duo.me?.state ?? "alive";
+  const meDownUntil = duo.me?.down_until ?? null;
+  useEffect(() => {
+    if (!duoActive || meState !== "down") return;
+    const id = window.setInterval(() => {
+      const left = meDownUntil ? new Date(meDownUntil).getTime() - Date.now() : 0;
+      setDuoDownMs(Math.max(0, left));
+    }, 200);
+    return () => window.clearInterval(id);
+  }, [duoActive, meState, meDownUntil]);
+
+  // Réanimé par l'allié → retour en jeu, spectaculaire
+  useEffect(() => {
+    if (!duoActive) return;
+    const s = stateRef.current;
+    if (meState === "alive" && !s.running && !s.over && duoDoneRef.current !== duo.room?.id) {
+      s.entities = s.entities.filter((e) => e.kind !== "hazard");
+      s.powers.shield = 3000; setPowers({ ...s.powers });
+      s.running = true;
+      setDuoDownMs(0);
+      audioRef.current.power();
+      navigator.vibrate?.([25, 40, 25]);
+      showToast(tr("duoRevived"));
+    }
+    if (meState === "dead" && !s.over) {
+      s.over = true; s.running = false;
+      duoEndRef.current(Math.floor(s.score));
+    }
+  }, [duoActive, meState, duo.room?.id, tr]);
+
+  // Récompenses coop : basées sur la performance de l'ÉQUIPE (validées côté serveur)
   useEffect(() => {
     const res = duo.result; const room = duo.room;
-    if (!res || !room) return;
+    if (!res || !room || !res.settled) return;
     if (duoRewardedRef.current === room.id) return;
     duoRewardedRef.current = room.id;
-    const coins = res.result === "win" ? 300 : res.result === "draw" ? 180 : 120;
-    const xp = res.result === "win" ? 400 : res.result === "draw" ? 250 : 150;
-    setProg((p) => ({ ...p, coins: p.coins + coins, xp: p.xp + xp }));
+    const secs = Math.floor(res.survivedMs / 1000);
+    const coins = 100 + Math.floor(res.teamScore / 40) + res.revives * 40 + Math.floor(secs / 10) * 5;
+    const xp = 150 + Math.floor(res.teamScore / 25) + res.revives * 60 + Math.floor(secs / 10) * 8;
+    setProg((p) => ({
+      ...p,
+      coins: p.coins + coins,
+      xp: p.xp + xp,
+      duoBest: Math.max(p.duoBest ?? 0, res.teamScore),
+      duoRevives: (p.duoRevives ?? 0) + res.revives,
+    }));
     const s = stateRef.current;
     applyRunRef.current({
-      runs: 1, blitzRuns: 0, score: res.myScore, hardcoreScore: 0,
+      runs: 1, blitzRuns: 0, score: res.teamScore, hardcoreScore: 0,
       combo: s.maxCombo, orbs: s.runOrbs || 0, powers: s.runPowers || 0,
     }, "classic");
-    setToast(`+${coins} 🪙 · +${xp} XP`);
-    setTimeout(() => setToast(""), 2400);
+    setToast(`🤝 +${coins} 🪙 · +${xp} XP`);
+    setTimeout(() => setToast(""), 2600);
   }, [duo.result, duo.room]);
+
 
 
 
@@ -552,15 +608,24 @@ export default function NeonRush() {
         s.particles.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, r: rand(1, 3), life: 0, maxLife: rand(400, 900), kind: "particle", color });
       }
     };
-    const gameOverNow = () => {
+    const gameOverNow = (byTime = false) => {
+      const fs = Math.floor(s.score);
+      // COOP : le joueur tombe à terre, la partie continue pour l'équipe
+      if (s.duo && !byTime) {
+        s.running = false;
+        audioRef.current.hit();
+        setScore(fs);
+        duoDownRef.current();
+        return;
+      }
       s.over = true; s.running = false;
       audioRef.current.gameover();
-      const fs = Math.floor(s.score);
       setScore(fs); setRunning(false);
       if (s.duo) { setGameOver(false); duoEndRef.current(fs); return; }
       setGameOver(true);
       finishRun(fs, s.mode, s.maxCombo);
     };
+
 
     const loop = (now: number) => {
       const dt = Math.min(48, now - last); last = now;
@@ -920,11 +985,19 @@ export default function NeonRush() {
             </div>
           )}
           {duoActive && (
-            <div className="mt-1 text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
-              ⚔ {tr("duoOpponent")} : <span className="text-glow-magenta tabular-nums">{duo.opponent?.score ?? 0}</span>
-            </div>
+            <>
+              <div className="mt-1 text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+                🤝 {tr("duoTeamScore")} : <span className="text-glow-yellow tabular-nums">{duoTeamScore}</span>
+              </div>
+              <div className="mt-1 text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+                {tr("duoPartner")} : <span className="text-glow-magenta">{tr(duo.partner ? ({ alive: "duoAlive", down: "duoDown", dead: "duoDead", disconnected: "duoDisconnected" }[duo.partner.state] ?? "duoAlive") : "duoWaiting")}</span>
+              </div>
+            </>
           )}
         </div>
+
+
+
 
 
         <div className="flex flex-col items-end gap-2">
@@ -961,6 +1034,30 @@ export default function NeonRush() {
               </span>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* COOP : allié à terre → réanimation */}
+      {duoActive && duo.partnerDown && duo.me?.state === "alive" && duo.partner && (
+        <div className="absolute inset-x-0 bottom-24 z-30 flex flex-col items-center gap-2 px-4">
+          <div className="panel-neon pulse-glow rounded-full px-5 py-2 text-xs font-black uppercase tracking-[0.25em] text-glow-magenta">
+            ⚠ {tr("duoPartnerDown")}
+          </div>
+          <button
+            onClick={() => duo.revivePartner(duo.partner!.user_id)}
+            className="rounded-2xl border border-[color:var(--neon-cyan)] bg-gradient-to-r from-[color:var(--neon-cyan)]/30 to-[color:var(--neon-magenta)]/30 px-8 py-4 font-display text-base font-black uppercase tracking-[0.3em] text-glow-cyan transition hover:scale-105"
+          >
+            ✚ {tr("duoRevive")}
+          </button>
+        </div>
+      )}
+
+      {/* COOP : je suis à terre → compte à rebours */}
+      {duoActive && duo.me?.state === "down" && (
+        <div className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-3 bg-black/55 backdrop-blur-sm">
+          <div className="font-display text-4xl font-black uppercase tracking-[0.2em] text-glow-magenta animate-pulse">{tr("duoYouDown")}</div>
+          <div className="font-display text-6xl font-black text-glow-yellow tabular-nums">{Math.ceil(duoDownMs / 1000)}</div>
+          <div className="text-[11px] uppercase tracking-[0.25em] text-muted-foreground">{tr("duoWaitRevive")}</div>
         </div>
       )}
 
@@ -1040,7 +1137,7 @@ export default function NeonRush() {
               <button onClick={() => setPanel("missions")} className="panel-neon rounded-lg py-2 text-glow-cyan hover:scale-105 transition">{tr("missions")}</button>
               <button onClick={() => setPanel("leaderboard")} className="panel-neon rounded-lg py-2 text-glow-yellow hover:scale-105 transition">🌍 {tr("leaderboard")}</button>
               <button onClick={() => setPanel("ranked")} className="panel-neon rounded-lg py-2 text-glow-cyan hover:scale-105 transition">{tr("ranked")}</button>
-              <button onClick={() => setPanel("duo")} className="panel-neon rounded-lg py-2 text-glow-magenta hover:scale-105 transition col-span-2 sm:col-span-3">⚔ {tr("duo")}</button>
+              <button onClick={() => setPanel("duo")} className="panel-neon rounded-lg py-2 text-glow-magenta hover:scale-105 transition col-span-2 sm:col-span-3">🤝 {tr("duo")}</button>
               <button onClick={() => setPanel("settings")} className="panel-neon rounded-lg py-2 text-glow-magenta hover:scale-105 transition col-span-2 sm:col-span-3">{tr("settings")}</button>
             </div>
 
@@ -1247,6 +1344,7 @@ export default function NeonRush() {
                 code={duoCode}
                 setCode={setDuoCode}
                 onCopy={(c) => { navigator.clipboard?.writeText(c).catch(() => { /* noop */ }); showToast(tr("duoCopied")); }}
+                teamRecord={prog.duoBest ?? 0}
                 onClose={() => setPanel(null)}
               />
             )}
