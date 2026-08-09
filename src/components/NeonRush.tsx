@@ -356,20 +356,23 @@ export default function NeonRush() {
     setGameOver(false); setRunning(true); setPanel(null); setRewardEarned(null);
   }, [prog.equipped]);
 
-  /* ---- Duo orchestration: the network never touches the render loop ---- */
+  /* ---- Duo COOP orchestration: the network never touches the render loop ---- */
   const duoActive = !!duo.room && duo.room.status === "playing";
+  const duoTeamScore = Math.max(duo.teamScore, score + (duo.partner?.score ?? 0));
 
-  // Both clients auto-launch when the host starts the duel (server clock = ends_at)
+  // Les deux alliés démarrent ensemble (chrono serveur partagé = ends_at)
   useEffect(() => {
     const r = duo.room;
     if (!r || r.status !== "playing" || running) return;
     if (duoDoneRef.current === r.id) return;
     const left = r.ends_at ? new Date(r.ends_at).getTime() - Date.now() : r.duration_s * 1000;
     if (left <= 800) return;
+    duo.beginRun();
+    setDuoDownMs(0);
     start("classic", { duo: true, durationMs: left });
-  }, [duo.room, running, start]);
+  }, [duo.room, duo.beginRun, running, start]);
 
-  // Live score sync (server-validated, throttled — no FPS impact)
+  // Contribution au score d'équipe (validée serveur, throttlée — aucun impact FPS)
   const duoPush = duo.pushScore;
   useEffect(() => {
     if (!duoActive || !running) return;
@@ -377,30 +380,79 @@ export default function NeonRush() {
     return () => window.clearInterval(id);
   }, [duoActive, running, duoPush]);
 
-  // End of duel run → hand the final score to the server, which decides the winner
-  duoEndRef.current = (finalScore: number) => {
-    duoDoneRef.current = duo.room?.id ?? null;
-    setPanel("duo");
-    duo.finish(finalScore);
+  // Le joueur tombe à terre : la partie continue, l'allié peut le réanimer
+  duoDownRef.current = () => {
+    const s = stateRef.current;
+    s.running = false;
+    setDuoDownMs(DUO_DOWN_MS);
+    duo.goDown(DUO_DOWN_MS);
   };
 
-  // Duo rewards (coins + Battle Pass XP) once the server has settled the match
+  // Fin de vie définitive : le serveur ne clôture que si toute l'équipe est éliminée
+  duoEndRef.current = (finalScore: number) => {
+    duoDoneRef.current = duo.room?.id ?? null;
+    setDuoDownMs(0);
+    setRunning(false);
+    setPanel("duo");
+    duo.endRun(finalScore);
+  };
+
+  // Compte à rebours de réanimation (affichage local, l'autorité reste au serveur)
+  const meState = duo.me?.state ?? "alive";
+  const meDownUntil = duo.me?.down_until ?? null;
+  useEffect(() => {
+    if (!duoActive || meState !== "down") return;
+    const id = window.setInterval(() => {
+      const left = meDownUntil ? new Date(meDownUntil).getTime() - Date.now() : 0;
+      setDuoDownMs(Math.max(0, left));
+    }, 200);
+    return () => window.clearInterval(id);
+  }, [duoActive, meState, meDownUntil]);
+
+  // Réanimé par l'allié → retour en jeu, spectaculaire
+  useEffect(() => {
+    if (!duoActive) return;
+    const s = stateRef.current;
+    if (meState === "alive" && !s.running && !s.over && duoDoneRef.current !== duo.room?.id) {
+      s.entities = s.entities.filter((e) => e.kind !== "hazard");
+      s.powers.shield = 3000; setPowers({ ...s.powers });
+      s.running = true;
+      setDuoDownMs(0);
+      audioRef.current.power();
+      navigator.vibrate?.([25, 40, 25]);
+      showToast(tr("duoRevived"));
+    }
+    if (meState === "dead" && !s.over) {
+      s.over = true; s.running = false;
+      duoEndRef.current(Math.floor(s.score));
+    }
+  }, [duoActive, meState, duo.room?.id, tr]);
+
+  // Récompenses coop : basées sur la performance de l'ÉQUIPE (validées côté serveur)
   useEffect(() => {
     const res = duo.result; const room = duo.room;
-    if (!res || !room) return;
+    if (!res || !room || !res.settled) return;
     if (duoRewardedRef.current === room.id) return;
     duoRewardedRef.current = room.id;
-    const coins = res.result === "win" ? 300 : res.result === "draw" ? 180 : 120;
-    const xp = res.result === "win" ? 400 : res.result === "draw" ? 250 : 150;
-    setProg((p) => ({ ...p, coins: p.coins + coins, xp: p.xp + xp }));
+    const secs = Math.floor(res.survivedMs / 1000);
+    const coins = 100 + Math.floor(res.teamScore / 40) + res.revives * 40 + Math.floor(secs / 10) * 5;
+    const xp = 150 + Math.floor(res.teamScore / 25) + res.revives * 60 + Math.floor(secs / 10) * 8;
+    setProg((p) => ({
+      ...p,
+      coins: p.coins + coins,
+      xp: p.xp + xp,
+      duoBest: Math.max(p.duoBest ?? 0, res.teamScore),
+      duoRevives: (p.duoRevives ?? 0) + res.revives,
+    }));
     const s = stateRef.current;
     applyRunRef.current({
-      runs: 1, blitzRuns: 0, score: res.myScore, hardcoreScore: 0,
+      runs: 1, blitzRuns: 0, score: res.teamScore, hardcoreScore: 0,
       combo: s.maxCombo, orbs: s.runOrbs || 0, powers: s.runPowers || 0,
     }, "classic");
-    setToast(`+${coins} 🪙 · +${xp} XP`);
-    setTimeout(() => setToast(""), 2400);
+    setToast(`🤝 +${coins} 🪙 · +${xp} XP`);
+    setTimeout(() => setToast(""), 2600);
   }, [duo.result, duo.room]);
+
 
 
 
