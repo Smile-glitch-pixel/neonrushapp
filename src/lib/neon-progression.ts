@@ -299,6 +299,10 @@ export type Progression = {
   bestByMode: Record<GameMode, number>;
   missions: MissionsData;
   displayName?: string;
+  /** Meilleur score d'équipe en Duo Coop (jamais un score individuel). */
+  duoBest?: number;
+  /** Réanimations de coéquipier effectuées au total. */
+  duoRevives?: number;
 };
 
 const KEY = "neon-rush-prog-v2";
@@ -311,7 +315,10 @@ export const defaultProg = (): Progression => ({
   equipped: "cyan",
   bestByMode: { classic: 0, hardcore: 0, zen: 0, blitz: 0 },
   missions: generateMissions(),
+  duoBest: 0,
+  duoRevives: 0,
 });
+
 
 export const loadProg = (): Progression => {
   if (typeof window === "undefined") return defaultProg();
