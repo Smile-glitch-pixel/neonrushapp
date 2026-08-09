@@ -1037,6 +1037,30 @@ export default function NeonRush() {
         </div>
       )}
 
+      {/* COOP : allié à terre → réanimation */}
+      {duoActive && duo.partnerDown && duo.me?.state === "alive" && duo.partner && (
+        <div className="absolute inset-x-0 bottom-24 z-30 flex flex-col items-center gap-2 px-4">
+          <div className="panel-neon pulse-glow rounded-full px-5 py-2 text-xs font-black uppercase tracking-[0.25em] text-glow-magenta">
+            ⚠ {tr("duoPartnerDown")}
+          </div>
+          <button
+            onClick={() => duo.revivePartner(duo.partner!.user_id)}
+            className="rounded-2xl border border-[color:var(--neon-cyan)] bg-gradient-to-r from-[color:var(--neon-cyan)]/30 to-[color:var(--neon-magenta)]/30 px-8 py-4 font-display text-base font-black uppercase tracking-[0.3em] text-glow-cyan transition hover:scale-105"
+          >
+            ✚ {tr("duoRevive")}
+          </button>
+        </div>
+      )}
+
+      {/* COOP : je suis à terre → compte à rebours */}
+      {duoActive && duo.me?.state === "down" && (
+        <div className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-3 bg-black/55 backdrop-blur-sm">
+          <div className="font-display text-4xl font-black uppercase tracking-[0.2em] text-glow-magenta animate-pulse">{tr("duoYouDown")}</div>
+          <div className="font-display text-6xl font-black text-glow-yellow tabular-nums">{Math.ceil(duoDownMs / 1000)}</div>
+          <div className="text-[11px] uppercase tracking-[0.25em] text-muted-foreground">{tr("duoWaitRevive")}</div>
+        </div>
+      )}
+
       {toast && (
         <div className="pointer-events-none absolute inset-x-0 top-24 z-30 flex justify-center animate-fade-in">
           <div className="panel-neon rounded-full px-5 py-2 text-xs font-bold uppercase tracking-[0.25em] text-glow-yellow">{toast}</div>
@@ -1113,7 +1137,7 @@ export default function NeonRush() {
               <button onClick={() => setPanel("missions")} className="panel-neon rounded-lg py-2 text-glow-cyan hover:scale-105 transition">{tr("missions")}</button>
               <button onClick={() => setPanel("leaderboard")} className="panel-neon rounded-lg py-2 text-glow-yellow hover:scale-105 transition">🌍 {tr("leaderboard")}</button>
               <button onClick={() => setPanel("ranked")} className="panel-neon rounded-lg py-2 text-glow-cyan hover:scale-105 transition">{tr("ranked")}</button>
-              <button onClick={() => setPanel("duo")} className="panel-neon rounded-lg py-2 text-glow-magenta hover:scale-105 transition col-span-2 sm:col-span-3">⚔ {tr("duo")}</button>
+              <button onClick={() => setPanel("duo")} className="panel-neon rounded-lg py-2 text-glow-magenta hover:scale-105 transition col-span-2 sm:col-span-3">🤝 {tr("duo")}</button>
               <button onClick={() => setPanel("settings")} className="panel-neon rounded-lg py-2 text-glow-magenta hover:scale-105 transition col-span-2 sm:col-span-3">{tr("settings")}</button>
             </div>
 
@@ -1320,6 +1344,7 @@ export default function NeonRush() {
                 code={duoCode}
                 setCode={setDuoCode}
                 onCopy={(c) => { navigator.clipboard?.writeText(c).catch(() => { /* noop */ }); showToast(tr("duoCopied")); }}
+                teamRecord={prog.duoBest ?? 0}
                 onClose={() => setPanel(null)}
               />
             )}
