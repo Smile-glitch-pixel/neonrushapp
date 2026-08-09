@@ -1,5 +1,6 @@
 import { Link } from "@tanstack/react-router";
 import type { useDuo } from "@/hooks/useDuo";
+import type { DuoPlayer } from "@/lib/duo.functions";
 
 type Duo = ReturnType<typeof useDuo>;
 
@@ -12,8 +13,36 @@ const ERR_KEY: Record<string, string> = {
   AUTH_REQUIRED: "duoAuth",
 };
 
+const STATE_KEY: Record<string, string> = {
+  alive: "duoAlive",
+  down: "duoDown",
+  dead: "duoDead",
+  disconnected: "duoDisconnected",
+};
+
+function fmtTime(ms: number) {
+  const s = Math.max(0, Math.floor(ms / 1000));
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+}
+
+function Slot({ p, label, color, glow, tr }: { p: DuoPlayer | null; label: string; color: string; glow: string; tr: (k: string) => string }) {
+  return (
+    <div className="rounded-xl border bg-black/30 p-4 text-center" style={{ borderColor: `color-mix(in oklab, ${color} 50%, transparent)` }}>
+      <div className="text-[10px] uppercase tracking-[0.25em] text-muted-foreground">{label}</div>
+      <div className={`mt-1 truncate font-display text-sm font-black uppercase tracking-widest ${glow}`}>
+        {p ? (p.display_name || "Player") : "—"}
+      </div>
+      {p && (
+        <div className="mt-1 text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+          {tr(STATE_KEY[p.state] ?? "duoAlive")}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function DuoLobby({
-  duo, tr, signedIn, code, setCode, onCopy, onClose,
+  duo, tr, signedIn, code, setCode, onCopy, onClose, teamRecord,
 }: {
   duo: Duo;
   tr: (k: string) => string;
@@ -22,8 +51,9 @@ export default function DuoLobby({
   setCode: (v: string) => void;
   onCopy: (code: string) => void;
   onClose: () => void;
+  teamRecord: number;
 }) {
-  const { room, me, opponent, isHost, busy, error, result } = duo;
+  const { room, me, partner, isHost, busy, error, result } = duo;
 
   if (!signedIn) {
     return (
@@ -37,22 +67,41 @@ export default function DuoLobby({
     );
   }
 
+  /* ---------- Résultat coopératif : aucun vainqueur, aucun perdant ---------- */
   if (result) {
-    const label = result.result === "win" ? tr("duoWin") : result.result === "loss" ? tr("duoLoss") : tr("duoDraw");
-    const color = result.result === "win" ? "text-glow-cyan" : result.result === "loss" ? "text-glow-magenta" : "text-glow-yellow";
+    const isRecord = result.settled && result.teamScore > 0 && result.teamScore >= teamRecord;
     return (
       <div className="space-y-4 text-center animate-scale-in">
-        <div className={`font-display text-4xl font-black uppercase tracking-[0.2em] ${color}`}>{label}</div>
-        <div className="grid grid-cols-2 gap-3">
-          <div className="rounded-xl border border-[color:var(--neon-cyan)]/50 bg-black/30 p-4">
-            <div className="text-[10px] uppercase tracking-[0.25em] text-muted-foreground">{tr("duoYou")}</div>
-            <div className="font-display text-3xl font-black text-glow-cyan tabular-nums">{result.myScore}</div>
+        <div className="font-display text-2xl font-black uppercase tracking-[0.2em] text-glow-cyan">🤝 {tr("duoEnd")}</div>
+        {!result.settled && (
+          <div className="text-[11px] uppercase tracking-[0.25em] text-glow-yellow animate-pulse">{tr("duoWaitResult")}</div>
+        )}
+        {isRecord && (
+          <div className="pulse-glow rounded-xl border border-[color:var(--neon-yellow)]/70 bg-[color:var(--neon-yellow)]/10 py-2 font-display text-sm font-black uppercase tracking-[0.25em] text-glow-yellow">
+            ★ {tr("duoRecord")}
           </div>
-          <div className="rounded-xl border border-[color:var(--neon-magenta)]/50 bg-black/30 p-4">
-            <div className="text-[10px] uppercase tracking-[0.25em] text-muted-foreground">{tr("duoOpponent")}</div>
-            <div className="font-display text-3xl font-black text-glow-magenta tabular-nums">{result.opponentScore}</div>
+        )}
+
+        <div className="rounded-2xl border border-[color:var(--neon-cyan)]/60 bg-black/40 p-5">
+          <div className="text-[10px] uppercase tracking-[0.3em] text-muted-foreground">{tr("duoTeamScore")}</div>
+          <div className="font-display text-5xl font-black text-glow-cyan tabular-nums">{result.teamScore}</div>
+        </div>
+
+        <div className="grid grid-cols-3 gap-2 text-[10px] uppercase tracking-[0.2em]">
+          <div className="rounded-xl border border-border/50 bg-black/30 p-3">
+            <div className="text-muted-foreground">{tr("duoSurvived")}</div>
+            <div className="mt-1 font-display text-lg font-black text-glow-yellow tabular-nums">{fmtTime(result.survivedMs)}</div>
+          </div>
+          <div className="rounded-xl border border-border/50 bg-black/30 p-3">
+            <div className="text-muted-foreground">{tr("duoRevives")}</div>
+            <div className="mt-1 font-display text-lg font-black text-glow-magenta tabular-nums">{result.revives}</div>
+          </div>
+          <div className="rounded-xl border border-border/50 bg-black/30 p-3">
+            <div className="text-muted-foreground">{tr("duoContribution")}</div>
+            <div className="mt-1 font-display text-lg font-black text-glow-cyan tabular-nums">{result.myContribution}</div>
           </div>
         </div>
+
         <div className="flex gap-2">
           <button onClick={() => { duo.setResult(null); duo.leave(); }} className="flex-1 panel-neon rounded-xl py-3 text-xs font-bold uppercase tracking-[0.25em] text-glow-yellow">
             {tr("duoRematch")}
@@ -65,16 +114,22 @@ export default function DuoLobby({
     );
   }
 
+  /* ---------- Création / rejoindre ---------- */
   if (!room) {
     return (
       <div className="space-y-4">
         <p className="text-sm text-muted-foreground text-center">{tr("duoDesc")}</p>
+        {teamRecord > 0 && (
+          <div className="text-center text-[10px] uppercase tracking-[0.25em] text-glow-yellow">
+            ★ {tr("duoTeamScore")} : {teamRecord}
+          </div>
+        )}
         <button
           onClick={() => duo.create()}
           disabled={busy}
           className="w-full rounded-xl border border-[color:var(--neon-cyan)] bg-gradient-to-r from-[color:var(--neon-cyan)]/20 to-[color:var(--neon-magenta)]/20 px-6 py-4 font-display text-base font-black uppercase tracking-[0.3em] text-glow-cyan transition hover:scale-[1.02] disabled:opacity-50"
         >
-          ⚔ {tr("duoCreate")}
+          🤝 {tr("duoCreate")}
         </button>
         <div className="flex gap-2">
           <input
@@ -98,6 +153,7 @@ export default function DuoLobby({
     );
   }
 
+  /* ---------- Salle d'attente de l'escouade ---------- */
   return (
     <div className="space-y-4">
       <div className="rounded-xl border border-[color:var(--neon-yellow)]/50 bg-black/30 p-4 text-center">
@@ -110,23 +166,13 @@ export default function DuoLobby({
       </div>
 
       <div className="grid grid-cols-2 gap-3">
-        {[
-          { p: me, label: tr("duoYou"), c: "var(--neon-cyan)", glow: "text-glow-cyan" },
-          { p: opponent, label: tr("duoOpponent"), c: "var(--neon-magenta)", glow: "text-glow-magenta" },
-        ].map((slot, i) => (
-          <div key={i} className="rounded-xl border bg-black/30 p-4 text-center" style={{ borderColor: `color-mix(in oklab, ${slot.c} 50%, transparent)` }}>
-            <div className="text-[10px] uppercase tracking-[0.25em] text-muted-foreground">{slot.label}</div>
-            <div className={`mt-1 truncate font-display text-sm font-black uppercase tracking-widest ${slot.glow}`}>
-              {slot.p ? (slot.p.display_name || "Player") : "—"}
-            </div>
-            {room.status === "finished" && <div className="mt-1 text-xs tabular-nums text-muted-foreground">{slot.p?.score ?? 0}</div>}
-          </div>
-        ))}
+        <Slot p={me} label={tr("duoYou")} color="var(--neon-cyan)" glow="text-glow-cyan" tr={tr} />
+        <Slot p={partner} label={tr("duoPartner")} color="var(--neon-magenta)" glow="text-glow-magenta" tr={tr} />
       </div>
 
-      {!opponent && <div className="text-center text-[11px] uppercase tracking-[0.25em] text-glow-cyan animate-pulse">{tr("duoWaiting")}</div>}
+      {!partner && <div className="text-center text-[11px] uppercase tracking-[0.25em] text-glow-cyan animate-pulse">{tr("duoWaiting")}</div>}
 
-      {opponent && room.status !== "playing" && (
+      {partner && room.status !== "playing" && (
         <>
           <div className="text-center text-[11px] uppercase tracking-[0.25em] text-glow-yellow">{tr("duoReady")}</div>
           {isHost ? (
