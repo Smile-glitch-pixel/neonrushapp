@@ -17,33 +17,36 @@ export type Database = {
       duo_matches: {
         Row: {
           created_at: string
-          guest_id: string | null
-          guest_score: number
-          host_id: string
-          host_score: number
+          duration_ms: number
           id: string
+          outcome: string
+          player_a_id: string
+          player_b_id: string | null
+          revives: number
           room_id: string | null
-          winner_id: string | null
+          team_score: number
         }
         Insert: {
           created_at?: string
-          guest_id?: string | null
-          guest_score?: number
-          host_id: string
-          host_score?: number
+          duration_ms?: number
           id?: string
+          outcome?: string
+          player_a_id: string
+          player_b_id?: string | null
+          revives?: number
           room_id?: string | null
-          winner_id?: string | null
+          team_score?: number
         }
         Update: {
           created_at?: string
-          guest_id?: string | null
-          guest_score?: number
-          host_id?: string
-          host_score?: number
+          duration_ms?: number
           id?: string
+          outcome?: string
+          player_a_id?: string
+          player_b_id?: string | null
+          revives?: number
           room_id?: string | null
-          winner_id?: string | null
+          team_score?: number
         }
         Relationships: [
           {
@@ -151,37 +154,49 @@ export type Database = {
       room_players: {
         Row: {
           display_name: string | null
+          down_until: string | null
           equipped_skin: string | null
           finished: boolean
           id: string
           is_host: boolean
           joined_at: string
+          last_seen: string
+          revives: number
           room_id: string
           score: number
+          state: string
           updated_at: string
           user_id: string
         }
         Insert: {
           display_name?: string | null
+          down_until?: string | null
           equipped_skin?: string | null
           finished?: boolean
           id?: string
           is_host?: boolean
           joined_at?: string
+          last_seen?: string
+          revives?: number
           room_id: string
           score?: number
+          state?: string
           updated_at?: string
           user_id: string
         }
         Update: {
           display_name?: string | null
+          down_until?: string | null
           equipped_skin?: string | null
           finished?: boolean
           id?: string
           is_host?: boolean
           joined_at?: string
+          last_seen?: string
+          revives?: number
           room_id?: string
           score?: number
+          state?: string
           updated_at?: string
           user_id?: string
         }
@@ -203,8 +218,11 @@ export type Database = {
           ends_at: string | null
           host_id: string
           id: string
+          revives: number
           started_at: string | null
           status: string
+          survived_ms: number
+          team_score: number
           updated_at: string
         }
         Insert: {
@@ -214,8 +232,11 @@ export type Database = {
           ends_at?: string | null
           host_id: string
           id?: string
+          revives?: number
           started_at?: string | null
           status?: string
+          survived_ms?: number
+          team_score?: number
           updated_at?: string
         }
         Update: {
@@ -225,8 +246,11 @@ export type Database = {
           ends_at?: string | null
           host_id?: string
           id?: string
+          revives?: number
           started_at?: string | null
           status?: string
+          survived_ms?: number
+          team_score?: number
           updated_at?: string
         }
         Relationships: []
@@ -237,15 +261,24 @@ export type Database = {
     }
     Functions: {
       duo_cleanup: { Args: never; Returns: undefined }
+      duo_close_coop: { Args: { _room: string }; Returns: undefined }
       duo_create_room: {
         Args: { _name: string; _skin: string }
         Returns: string
       }
+      duo_end_run: { Args: { _room: string }; Returns: undefined }
+      duo_go_down: {
+        Args: { _down_ms?: number; _room: string }
+        Returns: undefined
+      }
+      duo_heartbeat: { Args: { _room: string }; Returns: undefined }
       duo_is_member: { Args: { _room: string; _uid: string }; Returns: boolean }
       duo_join_room: {
         Args: { _code: string; _name: string; _skin: string }
         Returns: string
       }
+      duo_revive: { Args: { _room: string; _target: string }; Returns: boolean }
+      duo_tick: { Args: { _room: string }; Returns: undefined }
     }
     Enums: {
       [_ in never]: never
