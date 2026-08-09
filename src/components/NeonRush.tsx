@@ -608,15 +608,24 @@ export default function NeonRush() {
         s.particles.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, r: rand(1, 3), life: 0, maxLife: rand(400, 900), kind: "particle", color });
       }
     };
-    const gameOverNow = () => {
+    const gameOverNow = (byTime = false) => {
+      const fs = Math.floor(s.score);
+      // COOP : le joueur tombe à terre, la partie continue pour l'équipe
+      if (s.duo && !byTime) {
+        s.running = false;
+        audioRef.current.hit();
+        setScore(fs);
+        duoDownRef.current();
+        return;
+      }
       s.over = true; s.running = false;
       audioRef.current.gameover();
-      const fs = Math.floor(s.score);
       setScore(fs); setRunning(false);
       if (s.duo) { setGameOver(false); duoEndRef.current(fs); return; }
       setGameOver(true);
       finishRun(fs, s.mode, s.maxCombo);
     };
+
 
     const loop = (now: number) => {
       const dt = Math.min(48, now - last); last = now;
