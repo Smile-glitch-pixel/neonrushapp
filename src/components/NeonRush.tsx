@@ -985,11 +985,16 @@ export default function NeonRush() {
             </div>
           )}
           {duoActive && (
-            <div className="mt-1 text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
-              ⚔ {tr("duoOpponent")} : <span className="text-glow-magenta tabular-nums">{duo.opponent?.score ?? 0}</span>
-            </div>
+            <>
+              <div className="mt-1 text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+                🤝 {tr("duoTeamScore")} : <span className="text-glow-yellow tabular-nums">{duoTeamScore}</span>
+              </div>
+              <div className="mt-1 text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+                {tr("duoPartner")} : <span className="text-glow-magenta">{tr(duo.partner ? ({ alive: "duoAlive", down: "duoDown", dead: "duoDead", disconnected: "duoDisconnected" }[duo.partner.state] ?? "duoAlive") : "duoWaiting")}</span>
+              </div>
+            </>
           )}
-        </div>
+
 
 
         <div className="flex flex-col items-end gap-2">
