@@ -199,16 +199,20 @@ export default function NeonRush() {
   const [myRank, setMyRank] = useState<{ score: number; rank: number | null; total: number } | null>(null);
   const [lbLoading, setLbLoading] = useState(false);
 
-  // ---- DUO (online 1v1) ----
+  // ---- DUO COOP (2 joueurs, une équipe, un objectif commun) ----
+  const DUO_DOWN_MS = 10000;
   const [duoCode, setDuoCode] = useState("");
+  const [duoDownMs, setDuoDownMs] = useState(0);
   const duo = useDuo({
     userId: user?.id ?? null,
     displayName: prog.displayName ?? user?.email?.split("@")[0] ?? null,
     equippedSkin: prog.equipped,
   });
   const duoEndRef = useRef<(score: number) => void>(() => { /* set below */ });
+  const duoDownRef = useRef<() => void>(() => { /* set below */ });
   const duoDoneRef = useRef<string | null>(null);
   const duoRewardedRef = useRef<string | null>(null);
+
 
 
   useEffect(() => {
