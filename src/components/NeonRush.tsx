@@ -1281,7 +1281,7 @@ export default function NeonRush() {
 
             {panel === "leaderboard" && (
               <div>
-                <div className="mb-3 grid grid-cols-4 gap-1 text-[10px] uppercase tracking-[0.2em]">
+                <div className="mb-3 grid grid-cols-3 gap-1 text-[10px] uppercase tracking-[0.2em]">
                   {MODES.map((m) => (
                     <button key={m.id} onClick={() => setLbMode(m.id)} className={`rounded-lg py-2 font-bold ${lbMode === m.id ? "bg-[color:var(--neon-cyan)]/20 text-glow-cyan" : "bg-black/30 text-muted-foreground"}`}>
                       {tr(m.nameKey)}
