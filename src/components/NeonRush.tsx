@@ -1207,7 +1207,7 @@ export default function NeonRush() {
       <canvas ref={canvasRef} className="absolute inset-0 h-full w-full" style={{ touchAction: "none" }} />
       <div className="scanlines-overlay" />
       {recordFlash && <div className="pointer-events-none absolute inset-0 z-40 animate-[hud-flash_0.9s_ease-out]" />}
-      <NeonNotifications items={notifs} onDismiss={dismissNotif} />
+      <NeonNotifications list={notifs} onDismiss={dismissNotif} />
       {secondCharges > 0 && (
         <div className="pointer-events-none absolute bottom-24 left-1/2 z-20 -translate-x-1/2 rounded-full border border-[#7dff9b]/60 bg-black/50 px-4 py-1 text-xs font-bold tracking-widest text-[#7dff9b]">
           ✚ ×{secondCharges}
