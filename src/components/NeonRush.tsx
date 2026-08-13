@@ -986,8 +986,8 @@ export default function NeonRush() {
           // Bright core
           ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(0, 0, e.r * 0.3, 0, Math.PI * 2); ctx.fill();
         } else if (e.kind === "power") {
-          const colors: Record<string, string> = { shield: "#a0ffea", slow: "#c39bff", magnet: "#ffb36b", x2: "#fff17a" };
-          const c = colors[e.power!] || "#fff17a";
+          const def = POWER_MAP[e.power as PowerId];
+          const c = def?.color || "#fff17a";
           const g = ctx.createRadialGradient(0, 0, 0, 0, 0, e.r * 3);
           g.addColorStop(0, c); g.addColorStop(1, "rgba(0,0,0,0)");
           ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, 0, e.r * 3, 0, Math.PI * 2); ctx.fill();
