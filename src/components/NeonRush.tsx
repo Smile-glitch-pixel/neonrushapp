@@ -584,7 +584,7 @@ export default function NeonRush() {
       const dx = towards.x - x, dy = towards.y - y;
       const len = Math.hypot(dx, dy) || 1;
       const speed = rand(1.2, 2.4) * s.difficulty;
-      const hazardChance = s.mode === "zen" ? 0.05 : s.mode === "hardcore" ? 0.55 : 0.32;
+      const hazardChance = s.mode === "hardcore" ? 0.55 : 0.32;
       const isHazard = Math.random() < hazardChance;
       s.entities.push({
         x, y, vx: (dx / len) * speed, vy: (dy / len) * speed,
@@ -649,8 +649,8 @@ export default function NeonRush() {
           setTimeLeft(Math.ceil(left / 1000));
           if (left <= 0) { gameOverNow(); }
         }
-        const spawnBase = s.mode === "zen" ? 1200 : 700;
-        const spawnMin = s.mode === "zen" ? 700 : 260;
+        const spawnBase = 700;
+        const spawnMin = 260;
         const spawnRate = Math.max(spawnMin, spawnBase - s.t * 0.05);
         if (s.t - s.lastSpawn > spawnRate) {
           spawn(); if (Math.random() < 0.15 * s.difficulty) spawn(); s.lastSpawn = s.t;
@@ -1167,6 +1167,11 @@ export default function NeonRush() {
                     <div className="mt-1 text-[10px] uppercase tracking-[0.2em] text-glow-yellow">{tr("best")}: {prog.bestByMode[m.id]}</div>
                   </button>
                 ))}
+                <button onClick={() => setPanel("duo")} className="w-full rounded-xl border border-[color:var(--neon-magenta)]/60 bg-[color:var(--neon-magenta)]/10 p-3 text-left transition hover:border-[color:var(--neon-magenta)]">
+                  <div className="font-display text-lg font-black text-glow-magenta uppercase tracking-widest">🤝 {tr("duo")}</div>
+                  <div className="text-xs text-muted-foreground">{tr("duoDesc")}</div>
+                  <div className="mt-1 text-[10px] uppercase tracking-[0.2em] text-glow-yellow">{tr("best")} · {tr("duoTeamScore")}: {prog.duoBest ?? 0}</div>
+                </button>
               </div>
             )}
 
@@ -1276,7 +1281,7 @@ export default function NeonRush() {
 
             {panel === "leaderboard" && (
               <div>
-                <div className="mb-3 grid grid-cols-4 gap-1 text-[10px] uppercase tracking-[0.2em]">
+                <div className="mb-3 grid grid-cols-3 gap-1 text-[10px] uppercase tracking-[0.2em]">
                   {MODES.map((m) => (
                     <button key={m.id} onClick={() => setLbMode(m.id)} className={`rounded-lg py-2 font-bold ${lbMode === m.id ? "bg-[color:var(--neon-cyan)]/20 text-glow-cyan" : "bg-black/30 text-muted-foreground"}`}>
                       {tr(m.nameKey)}
