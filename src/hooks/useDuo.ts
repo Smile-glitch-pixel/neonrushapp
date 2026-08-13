@@ -35,8 +35,8 @@ export function useDuo(opts: { userId: string | null; displayName: string | null
     const id = roomIdRef.current;
     if (!id) return;
     try {
-      const r = (await stateFn({ data: { room_id: id } })) as DuoRoomState;
-      setRoom(r);
+      const r = (await stateFn({ data: { room_id: id } })) as DuoRoomState | null;
+      setRoom(r ?? null);
     } catch {
       setRoom(null);
     }
