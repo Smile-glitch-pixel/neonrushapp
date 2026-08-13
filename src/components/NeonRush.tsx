@@ -150,6 +150,51 @@ class AudioEngine {
     const tt = this.ctx.currentTime;
     [440, 330, 262, 196].forEach((f, i) => this.playTone({ freq: f, dur: 0.35, type: "sawtooth", gain: 0.25, at: tt + i * 0.12 }));
   }
+  /** Power-up spécifique : timbre différent selon l'identité */
+  powerUp(id: string) {
+    if (!this.ctx) return;
+    const tt = this.ctx.currentTime;
+    const map: Record<string, number[]> = {
+      shield: [392, 523, 659],
+      slow: [659, 523, 392, 330],
+      x2: [523, 659, 784, 1046],
+      magnet: [440, 554, 660],
+      boost: [330, 494, 740, 988],
+      second: [262, 392, 523, 784, 1046],
+    };
+    (map[id] ?? [440, 660]).forEach((f, i) =>
+      this.playTone({ freq: f, dur: 0.16, type: id === "boost" ? "square" : "triangle", gain: 0.22, at: tt + i * 0.05 }),
+    );
+  }
+  /** Fin d'un effet : descente courte */
+  expire() {
+    if (!this.ctx) return;
+    const tt = this.ctx.currentTime;
+    this.playTone({ freq: 520, dur: 0.22, type: "sine", gain: 0.16, at: tt, slideTo: 180 });
+  }
+  countBeep(last: boolean) {
+    if (!this.ctx) return;
+    this.playTone({ freq: last ? 880 : 520, dur: last ? 0.35 : 0.14, type: "square", gain: 0.22 });
+  }
+  record() {
+    if (!this.ctx) return;
+    const tt = this.ctx.currentTime;
+    [784, 988, 1175, 1568].forEach((f, i) => {
+      this.playTone({ freq: f, dur: 0.3, type: "triangle", gain: 0.26, at: tt + i * 0.08 });
+      this.playTone({ freq: f * 2, dur: 0.2, type: "sine", gain: 0.12, at: tt + i * 0.08 + 0.02 });
+    });
+  }
+  reviveTick(p: number) {
+    if (!this.ctx) return;
+    this.playTone({ freq: 300 + p * 500, dur: 0.06, type: "sine", gain: 0.14 });
+  }
+  reviveDone() {
+    if (!this.ctx) return;
+    const tt = this.ctx.currentTime;
+    this.playTone({ freq: 110, dur: 0.5, type: "sawtooth", gain: 0.3, filter: 600 });
+    [523, 784, 1046, 1568].forEach((f, i) => this.playTone({ freq: f, dur: 0.45, type: "triangle", gain: 0.26, at: tt + 0.08 + i * 0.07 }));
+    this.noiseHit(0.35, 0.2, this.sfxGain ?? this.master!, tt);
+  }
   dispose() { if (this.musicTimer) clearInterval(this.musicTimer); this.musicTimer = null; this.ctx?.close(); this.ctx = null; this.started = false; }
 }
 
@@ -159,9 +204,14 @@ type Entity = Vec & {
   vx: number; vy: number; r: number; life: number; maxLife: number;
   kind: "orb" | "hazard" | "power" | "particle";
   color: string;
-  power?: "shield" | "slow" | "magnet" | "x2";
+  power?: PowerId;
   angle?: number; spin?: number;
 };
+/** Onde de choc (activation, impact, réanimation) */
+type Wave = { x: number; y: number; r: number; maxR: number; life: number; maxLife: number; color: string; width: number };
+/** Texte flottant (score, combo, power-up) */
+type Popup = { x: number; y: number; text: string; life: number; maxLife: number; color: string; size: number; vy: number };
+const vibrate = (pattern: number | number[]) => { try { navigator.vibrate?.(pattern); } catch { /* noop */ } };
 const rand = (a: number, b: number) => a + Math.random() * (b - a);
 const dist2 = (a: Vec, b: Vec) => (a.x - b.x) ** 2 + (a.y - b.y) ** 2;
 
