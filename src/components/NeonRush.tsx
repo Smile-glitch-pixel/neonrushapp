@@ -1000,8 +1000,7 @@ export default function NeonRush() {
           ctx.closePath(); ctx.stroke();
           ctx.fillStyle = "#0b0620"; ctx.font = "bold 12px Orbitron, sans-serif";
           ctx.textAlign = "center"; ctx.textBaseline = "middle";
-          const label: Record<string, string> = { shield: "S", slow: "T", magnet: "M", x2: "×2" };
-          ctx.fillText(label[e.power!] || "?", 0, 1);
+          ctx.fillText(def?.glyph || "?", 0, 1);
         }
         ctx.restore();
       }
