@@ -234,7 +234,13 @@ export default function NeonRush() {
   const [rewardEarned, setRewardEarned] = useState<{ coins: number; xp: number; skin?: SkinId } | null>(null);
   const [toast, setToast] = useState<string>("");
   const [panel, setPanel] = useState<null | "modes" | "skins" | "pass" | "ranked" | "settings" | "leaderboard" | "missions" | "duo">(null);
-  const [powers, setPowers] = useState<{ shield: number; slow: number; magnet: number; x2: number }>({ shield: 0, slow: 0, magnet: 0, x2: 0 });
+  const [powers, setPowers] = useState<PowerTimers>(() => emptyTimers());
+  const [secondCharges, setSecondCharges] = useState(0);
+  const [countdown, setCountdown] = useState(0);
+  const [recordFlash, setRecordFlash] = useState(false);
+  const [chestFx, setChestFx] = useState<null | { stage: "shake" | "reveal"; rarity: Rarity; name: string; colors: [string, string, string] }>(null);
+  const [reviveHold, setReviveHold] = useState(0); // 0..1
+  const { list: notifs, notify, dismiss: dismissNotif, clear: clearNotifs } = useNotifications();
   const [user, setUser] = useState<{ id: string; email: string | null } | null>(null);
   const [hydrated, setHydrated] = useState(false);
   const pullFn = useServerFn(pullPlayerState);
