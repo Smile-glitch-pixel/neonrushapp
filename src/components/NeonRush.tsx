@@ -14,6 +14,9 @@ import { useDuo } from "@/hooks/useDuo";
 import DuoLobby from "@/components/DuoLobby";
 import { mergeProg, progToRemote } from "@/lib/prog-sync";
 import { submitScore, fetchLeaderboard, fetchMyRank } from "@/lib/leaderboard.functions";
+import { POWERS, POWER_MAP, POWER_IDS, rollPower, emptyTimers, type PowerId, type PowerTimers } from "@/lib/powerups";
+import { useNotifications } from "@/hooks/useNotifications";
+import NeonNotifications from "@/components/NeonNotifications";
 
 /* ----------------------------- Audio Engine ----------------------------- */
 class AudioEngine {
