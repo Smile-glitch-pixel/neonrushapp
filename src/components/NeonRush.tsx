@@ -14,6 +14,9 @@ import { useDuo } from "@/hooks/useDuo";
 import DuoLobby from "@/components/DuoLobby";
 import { mergeProg, progToRemote } from "@/lib/prog-sync";
 import { submitScore, fetchLeaderboard, fetchMyRank } from "@/lib/leaderboard.functions";
+import { POWERS, POWER_MAP, POWER_IDS, rollPower, emptyTimers, type PowerId, type PowerTimers } from "@/lib/powerups";
+import { useNotifications } from "@/hooks/useNotifications";
+import NeonNotifications from "@/components/NeonNotifications";
 
 /* ----------------------------- Audio Engine ----------------------------- */
 class AudioEngine {
@@ -147,6 +150,51 @@ class AudioEngine {
     const tt = this.ctx.currentTime;
     [440, 330, 262, 196].forEach((f, i) => this.playTone({ freq: f, dur: 0.35, type: "sawtooth", gain: 0.25, at: tt + i * 0.12 }));
   }
+  /** Power-up spécifique : timbre différent selon l'identité */
+  powerUp(id: string) {
+    if (!this.ctx) return;
+    const tt = this.ctx.currentTime;
+    const map: Record<string, number[]> = {
+      shield: [392, 523, 659],
+      slow: [659, 523, 392, 330],
+      x2: [523, 659, 784, 1046],
+      magnet: [440, 554, 660],
+      boost: [330, 494, 740, 988],
+      second: [262, 392, 523, 784, 1046],
+    };
+    (map[id] ?? [440, 660]).forEach((f, i) =>
+      this.playTone({ freq: f, dur: 0.16, type: id === "boost" ? "square" : "triangle", gain: 0.22, at: tt + i * 0.05 }),
+    );
+  }
+  /** Fin d'un effet : descente courte */
+  expire() {
+    if (!this.ctx) return;
+    const tt = this.ctx.currentTime;
+    this.playTone({ freq: 520, dur: 0.22, type: "sine", gain: 0.16, at: tt, slideTo: 180 });
+  }
+  countBeep(last: boolean) {
+    if (!this.ctx) return;
+    this.playTone({ freq: last ? 880 : 520, dur: last ? 0.35 : 0.14, type: "square", gain: 0.22 });
+  }
+  record() {
+    if (!this.ctx) return;
+    const tt = this.ctx.currentTime;
+    [784, 988, 1175, 1568].forEach((f, i) => {
+      this.playTone({ freq: f, dur: 0.3, type: "triangle", gain: 0.26, at: tt + i * 0.08 });
+      this.playTone({ freq: f * 2, dur: 0.2, type: "sine", gain: 0.12, at: tt + i * 0.08 + 0.02 });
+    });
+  }
+  reviveTick(p: number) {
+    if (!this.ctx) return;
+    this.playTone({ freq: 300 + p * 500, dur: 0.06, type: "sine", gain: 0.14 });
+  }
+  reviveDone() {
+    if (!this.ctx) return;
+    const tt = this.ctx.currentTime;
+    this.playTone({ freq: 110, dur: 0.5, type: "sawtooth", gain: 0.3, filter: 600 });
+    [523, 784, 1046, 1568].forEach((f, i) => this.playTone({ freq: f, dur: 0.45, type: "triangle", gain: 0.26, at: tt + 0.08 + i * 0.07 }));
+    this.noiseHit(0.35, 0.2, this.sfxGain ?? this.master!, tt);
+  }
   dispose() { if (this.musicTimer) clearInterval(this.musicTimer); this.musicTimer = null; this.ctx?.close(); this.ctx = null; this.started = false; }
 }
 
@@ -156,9 +204,14 @@ type Entity = Vec & {
   vx: number; vy: number; r: number; life: number; maxLife: number;
   kind: "orb" | "hazard" | "power" | "particle";
   color: string;
-  power?: "shield" | "slow" | "magnet" | "x2";
+  power?: PowerId;
   angle?: number; spin?: number;
 };
+/** Onde de choc (activation, impact, réanimation) */
+type Wave = { x: number; y: number; r: number; maxR: number; life: number; maxLife: number; color: string; width: number };
+/** Texte flottant (score, combo, power-up) */
+type Popup = { x: number; y: number; text: string; life: number; maxLife: number; color: string; size: number; vy: number };
+const vibrate = (pattern: number | number[]) => { try { navigator.vibrate?.(pattern); } catch { /* noop */ } };
 const rand = (a: number, b: number) => a + Math.random() * (b - a);
 const dist2 = (a: Vec, b: Vec) => (a.x - b.x) ** 2 + (a.y - b.y) ** 2;
 
@@ -181,7 +234,13 @@ export default function NeonRush() {
   const [rewardEarned, setRewardEarned] = useState<{ coins: number; xp: number; skin?: SkinId } | null>(null);
   const [toast, setToast] = useState<string>("");
   const [panel, setPanel] = useState<null | "modes" | "skins" | "pass" | "ranked" | "settings" | "leaderboard" | "missions" | "duo">(null);
-  const [powers, setPowers] = useState<{ shield: number; slow: number; magnet: number; x2: number }>({ shield: 0, slow: 0, magnet: 0, x2: 0 });
+  const [powers, setPowers] = useState<PowerTimers>(() => emptyTimers());
+  const [secondCharges, setSecondCharges] = useState(0);
+  const [countdown, setCountdown] = useState(0);
+  const [recordFlash, setRecordFlash] = useState(false);
+  const [chestFx, setChestFx] = useState<null | { stage: "shake" | "reveal"; rarity: Rarity; name: string; colors: [string, string, string] }>(null);
+  const [reviveHold, setReviveHold] = useState(0); // 0..1
+  const { list: notifs, notify, dismiss: dismissNotif, clear: clearNotifs } = useNotifications();
   const [user, setUser] = useState<{ id: string; email: string | null } | null>(null);
   const [hydrated, setHydrated] = useState(false);
   const pullFn = useServerFn(pullPlayerState);
@@ -323,9 +382,14 @@ export default function NeonRush() {
   const stateRef = useRef({
     player: { x: 0, y: 0, r: 14, tx: 0, ty: 0, trail: [] as Vec[] },
     entities: [] as Entity[], particles: [] as Entity[],
+    waves: [] as Wave[], popups: [] as Popup[],
     t: 0, lastSpawn: 0, lastPower: 0, shake: 0,
     combo: 0, comboTimer: 0, score: 0, maxCombo: 0,
-    powers: { shield: 0, slow: 0, magnet: 0, x2: 0 },
+    powers: emptyTimers(),
+    secondCharges: 0, invuln: 0,
+    /** qualité adaptative des effets (1 = plein, 0.5 = mobile en difficulté) */
+    q: 1, fpsAcc: 0, fpsFrames: 0,
+    bestAtStart: 0, recordFired: false,
     dpr: 1, w: 0, h: 0, over: false, running: false, difficulty: 1,
     mode: "classic" as GameMode,
     skinColors: equippedSkin.colors as [string, string, string],
@@ -336,17 +400,25 @@ export default function NeonRush() {
     duo: false,
   });
 
+  const notifyRef = useRef(notify);
+  useEffect(() => { notifyRef.current = notify; }, [notify]);
+  const trRef = useRef((k: string) => t(lang, k));
+  useEffect(() => { trRef.current = (k: string) => t(lang, k); }, [lang]);
+
   const start = useCallback(async (m: GameMode, opts?: { duo?: boolean; durationMs?: number }) => {
     await audioRef.current.start();
     const s = stateRef.current;
-    s.entities = []; s.particles = [];
+    s.entities = []; s.particles = []; s.waves = []; s.popups = [];
     s.player.x = s.w / 2; s.player.y = s.h / 2;
     s.player.tx = s.player.x; s.player.ty = s.player.y; s.player.trail = [];
     s.t = 0; s.lastSpawn = 0; s.lastPower = 0;
     s.combo = 0; s.comboTimer = 0; s.score = 0; s.shake = 0; s.maxCombo = 0;
     s.runOrbs = 0; s.runPowers = 0;
-    s.powers = { shield: 0, slow: 0, magnet: 0, x2: 0 };
-    s.over = false; s.running = true; s.difficulty = m === "hardcore" ? 1.5 : 1;
+    s.powers = emptyTimers();
+    s.secondCharges = 0; s.invuln = 0;
+    s.q = 1; s.fpsAcc = 0; s.fpsFrames = 0;
+    s.bestAtStart = prog.bestByMode[m] || 0; s.recordFired = false;
+    s.over = false; s.difficulty = m === "hardcore" ? 1.5 : 1;
     s.mode = m;
     s.duo = !!opts?.duo;
     const sk = SKINS.find((k) => k.id === prog.equipped) || SKINS[0];
@@ -355,10 +427,32 @@ export default function NeonRush() {
     s.skinRarity = sk.rarity;
     s.duration = opts?.durationMs ?? (m === "blitz" ? 60000 : 0);
     setMode(m); setScore(0); setCombo(0);
-    setPowers({ shield: 0, slow: 0, magnet: 0, x2: 0 });
+    setPowers(emptyTimers()); setSecondCharges(0); setRecordFlash(false); setReviveHold(0);
+    clearNotifs();
     setTimeLeft(s.duration > 0 ? Math.ceil(s.duration / 1000) : 0);
     setGameOver(false); setRunning(true); setPanel(null); setRewardEarned(null);
-  }, [prog.equipped]);
+    // Compte à rebours arcade (le Duo démarre sur le chrono serveur, sans délai)
+    if (opts?.duo) { s.running = true; setCountdown(0); }
+    else { s.running = false; setCountdown(3); }
+  }, [prog.equipped, prog.bestByMode, clearNotifs]);
+
+  // Compte à rebours 3 · 2 · 1 · GO
+  useEffect(() => {
+    if (countdown <= 0) return;
+    audioRef.current.countBeep(countdown === 1);
+    const id = window.setTimeout(() => {
+      setCountdown((c) => {
+        const n = c - 1;
+        if (n <= 0) {
+          const s = stateRef.current;
+          if (!s.over) { s.running = true; s.waves.push({ x: s.w / 2, y: s.h / 2, r: 10, maxR: Math.max(s.w, s.h) * 0.7, life: 0, maxLife: 520, color: s.skinColors[1], width: 4 }); }
+          audioRef.current.countBeep(true);
+        }
+        return Math.max(0, n);
+      });
+    }, 620);
+    return () => window.clearTimeout(id);
+  }, [countdown]);
 
   /* ---- Duo COOP orchestration: the network never touches the render loop ---- */
   const duoActive = !!duo.room && duo.room.status === "playing";
@@ -596,17 +690,53 @@ export default function NeonRush() {
       });
     };
     const spawnPower = () => {
-      if (s.mode === "hardcore") return;
-      const kinds: Array<"shield" | "slow" | "magnet" | "x2"> = ["shield", "slow", "magnet", "x2"];
-      const power = kinds[Math.floor(Math.random() * kinds.length)];
-      s.entities.push({ x: rand(60, s.w - 60), y: rand(60, s.h - 60), vx: 0, vy: 0, r: 14, life: 0, maxLife: 8000, kind: "power", color: "#fff17a", power, angle: 0, spin: 0.03 });
+      const def = rollPower();
+      s.entities.push({
+        x: rand(60, Math.max(70, s.w - 60)), y: rand(60, Math.max(70, s.h - 60)),
+        vx: 0, vy: 0, r: 15, life: 0, maxLife: 9000,
+        kind: "power", color: def.color, power: def.id, angle: 0, spin: 0.03,
+      });
     };
+    /** Explosion de particules (quantité adaptée aux performances) */
     const burst = (x: number, y: number, color: string, count = 24, force = 1) => {
-      for (let i = 0; i < count; i++) {
+      const n = Math.max(4, Math.round(count * s.q));
+      for (let i = 0; i < n; i++) {
         const a = Math.random() * Math.PI * 2;
         const sp = rand(1, 6) * force;
         s.particles.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, r: rand(1, 3), life: 0, maxLife: rand(400, 900), kind: "particle", color });
       }
+    };
+    /** Onde de choc */
+    const wave = (x: number, y: number, color: string, maxR = 160, width = 3, ms = 480) => {
+      s.waves.push({ x, y, r: 6, maxR, life: 0, maxLife: ms, color, width });
+    };
+    /** Texte flottant */
+    const popup = (x: number, y: number, text: string, color: string, size = 14) => {
+      s.popups.push({ x, y, text, color, size, life: 0, maxLife: 900, vy: -0.6 });
+    };
+    /** Active un power-up : effet réel + feedback complet */
+    const activatePower = (id: PowerId, x: number, y: number) => {
+      const def = POWER_MAP[id];
+      s.runPowers++;
+      if (id === "second") {
+        s.secondCharges = Math.min(2, s.secondCharges + 1);
+        setSecondCharges(s.secondCharges);
+      } else {
+        s.powers[id] = def.durationMs;
+        setPowers({ ...s.powers });
+      }
+      if (id === "boost") s.invuln = Math.max(s.invuln, 400);
+      burst(x, y, def.color, 46, 1.5);
+      wave(x, y, def.color, 190, 4, 520);
+      wave(s.player.x, s.player.y, def.color, 120, 2, 380);
+      popup(x, y - 18, `${trRef.current(def.labelKey)}`, def.color, 15);
+      audioRef.current.powerUp(id);
+      vibrate(id === "second" ? [20, 40, 20, 40, 30] : 22);
+      notifyRef.current(`${trRef.current(def.labelKey)} ${trRef.current("pwOn")}`, {
+        kind: id === "second" ? "epic" : "success", icon: def.glyph, color: def.color,
+      });
+      if (s.duo) notifyRef.current(trRef.current(def.coopKey), { kind: "info", icon: "🤝", ttl: 1800 });
+      s.shake = Math.max(s.shake, 8);
     };
     const gameOverNow = (byTime = false) => {
       const fs = Math.floor(s.score);
@@ -629,6 +759,13 @@ export default function NeonRush() {
 
     const loop = (now: number) => {
       const dt = Math.min(48, now - last); last = now;
+      // Qualité adaptative : si le mobile souffre, on réduit les particules (jamais le contrôle)
+      s.fpsAcc += dt; s.fpsFrames++;
+      if (s.fpsFrames >= 45) {
+        const avg = s.fpsAcc / s.fpsFrames;
+        s.q = avg > 26 ? 0.4 : avg > 20 ? 0.7 : 1;
+        s.fpsAcc = 0; s.fpsFrames = 0;
+      }
       ctx.fillStyle = "rgba(10, 8, 22, 0.35)"; ctx.fillRect(0, 0, s.w, s.h);
       ctx.save(); ctx.globalAlpha = 0.25; ctx.strokeStyle = "#3a1b6a"; ctx.lineWidth = 1;
       const gs = 40; const off = (s.t * 0.03) % gs;
@@ -655,22 +792,47 @@ export default function NeonRush() {
         if (s.t - s.lastSpawn > spawnRate) {
           spawn(); if (Math.random() < 0.15 * s.difficulty) spawn(); s.lastSpawn = s.t;
         }
-        if (s.mode !== "hardcore" && s.t - s.lastPower > 9000) { spawnPower(); s.lastPower = s.t; }
+        // Hardcore aussi a droit aux power-ups (plus rares) : ils sont indispensables au feeling
+        const powerEvery = s.mode === "hardcore" ? 13000 : 8500;
+        if (s.t - s.lastPower > powerEvery) { spawnPower(); s.lastPower = s.t; }
 
         // Tight tracking for touch/mouse (input already snaps on touch); smooth for keyboard
-        s.player.x += (s.player.tx - s.player.x) * 0.55;
-        s.player.y += (s.player.ty - s.player.y) * 0.55;
+        const boosting = s.powers.boost > 0;
+        const follow = boosting ? 0.72 : 0.55;
+        s.player.x += (s.player.tx - s.player.x) * follow;
+        s.player.y += (s.player.ty - s.player.y) * follow;
         s.player.x = Math.max(s.player.r, Math.min(s.w - s.player.r, s.player.x));
         s.player.y = Math.max(s.player.r, Math.min(s.h - s.player.r, s.player.y));
         s.player.trail.push({ x: s.player.x, y: s.player.y });
-        if (s.player.trail.length > s.skinFx.trailLen) s.player.trail.shift();
+        const trailLen = s.skinFx.trailLen + (boosting ? 10 : 0);
+        while (s.player.trail.length > trailLen) s.player.trail.shift();
+        // Trainée de vitesse
+        if (boosting && Math.random() < 0.7 * s.q) {
+          const a = Math.random() * Math.PI * 2;
+          s.particles.push({ x: s.player.x, y: s.player.y, vx: Math.cos(a) * 1.2, vy: Math.sin(a) * 1.2, r: rand(1, 2.5), life: 0, maxLife: 380, kind: "particle", color: POWER_MAP.boost.color });
+        }
 
-        (Object.keys(s.powers) as Array<keyof typeof s.powers>).forEach((k) => { s.powers[k] = Math.max(0, s.powers[k] - dt); });
+        // Décompte des effets + animation de fin
+        POWER_IDS.forEach((k) => {
+          const before = s.powers[k];
+          if (before <= 0) return;
+          const next = Math.max(0, before - dt);
+          s.powers[k] = next;
+          if (next === 0) {
+            const def = POWER_MAP[k];
+            wave(s.player.x, s.player.y, def.color, 130, 2, 420);
+            burst(s.player.x, s.player.y, def.color, 16, 1);
+            audioRef.current.expire();
+            notifyRef.current(`${trRef.current(def.labelKey)} ${trRef.current("pwEnd")}`, { kind: "warn", icon: def.glyph, ttl: 1500 });
+            setPowers({ ...s.powers });
+          }
+        });
+        s.invuln = Math.max(0, s.invuln - dt);
         s.comboTimer = Math.max(0, s.comboTimer - dt);
         if (s.comboTimer === 0 && s.combo > 0) s.combo = 0;
 
         const slowFactor = s.powers.slow > 0 ? 0.35 : 1;
-        const magnetR = s.powers.magnet > 0 ? 180 : 0;
+        const magnetR = s.powers.magnet > 0 ? 210 : 0;
 
         for (let i = s.entities.length - 1; i >= 0; i--) {
           const e = s.entities[i];
@@ -680,8 +842,14 @@ export default function NeonRush() {
           } else {
             if (magnetR && e.kind === "orb") {
               const dx = s.player.x - e.x, dy = s.player.y - e.y;
-              const d = Math.hypot(dx, dy);
-              if (d < magnetR) { e.vx += (dx / d) * 0.4; e.vy += (dy / d) * 0.4; }
+              const d = Math.hypot(dx, dy) || 1;
+              if (d < magnetR) {
+                e.vx += (dx / d) * 0.55; e.vy += (dy / d) * 0.55;
+                // Filet de particules vers le joueur
+                if (Math.random() < 0.25 * s.q) {
+                  s.particles.push({ x: e.x, y: e.y, vx: (dx / d) * 3, vy: (dy / d) * 3, r: 1.4, life: 0, maxLife: 320, kind: "particle", color: POWER_MAP.magnet.color });
+                }
+              }
             }
             e.x += e.vx * slowFactor * (dt / 16);
             e.y += e.vy * slowFactor * (dt / 16);
@@ -691,27 +859,65 @@ export default function NeonRush() {
           const rr = (e.r + s.player.r) ** 2;
           if (dist2(e, s.player) < rr) {
             if (e.kind === "orb") {
-              s.combo++; s.comboTimer = 1800; if (s.combo > s.maxCombo) s.maxCombo = s.combo;
-              const mul = s.powers.x2 > 0 ? 2 : 1;
-              const gain = (10 + s.combo * 2) * mul;
+              s.combo++; s.comboTimer = 1800;
+              const comboUp = s.combo > s.maxCombo;
+              if (comboUp) s.maxCombo = s.combo;
+              const mul = (s.powers.x2 > 0 ? 2 : 1) * (s.powers.boost > 0 ? 1.25 : 1);
+              const gain = Math.round((10 + s.combo * 2) * mul);
               s.score += gain; setScore(Math.floor(s.score)); setCombo(s.combo);
               audioRef.current.pickup(s.combo);
               burst(e.x, e.y, s.skinColors[1], Math.round(18 * s.skinFx.particles), 1);
+              popup(e.x, e.y, `+${gain}`, s.powers.x2 > 0 ? POWER_MAP.x2.color : s.skinColors[1], s.powers.x2 > 0 ? 16 : 13);
+              if (s.combo > 0 && s.combo % 10 === 0) {
+                wave(s.player.x, s.player.y, POWER_MAP.x2.color, 200, 3, 460);
+                popup(s.player.x, s.player.y - 34, `×${s.combo}`, "#fff17a", 20);
+                vibrate(12);
+              }
+              // Nouveau record en direct
+              if (!s.recordFired && s.bestAtStart > 0 && s.score > s.bestAtStart) {
+                s.recordFired = true;
+                audioRef.current.record();
+                wave(s.player.x, s.player.y, "#fff17a", 320, 5, 700);
+                burst(s.player.x, s.player.y, "#fff17a", 60, 2);
+                vibrate([30, 50, 30]);
+                notifyRef.current(trRef.current("newRecord"), { kind: "epic", icon: "🏆" });
+                setRecordFlash(true);
+                window.setTimeout(() => setRecordFlash(false), 900);
+              }
               s.entities.splice(i, 1);
               s.runOrbs++;
             } else if (e.kind === "power" && e.power) {
-              s.powers[e.power] = 6000; setPowers({ ...s.powers });
-              audioRef.current.power(); burst(e.x, e.y, "#fff17a", 40, 1.4);
+              activatePower(e.power, e.x, e.y);
               s.entities.splice(i, 1);
-              s.runPowers++;
             } else if (e.kind === "hazard") {
-              if (s.powers.shield > 0) {
+              if (s.invuln > 0) {
+                // rien : fenêtre d'invulnérabilité (retour en jeu / turbo)
+              } else if (s.powers.shield > 0) {
                 s.powers.shield = 0; setPowers({ ...s.powers });
-                burst(e.x, e.y, "#a0ffea", 40, 1.6); s.shake = 14;
-                audioRef.current.power(); s.entities.splice(i, 1);
+                burst(e.x, e.y, POWER_MAP.shield.color, 44, 1.6);
+                wave(s.player.x, s.player.y, POWER_MAP.shield.color, 200, 5, 480);
+                s.shake = 16; s.invuln = 350;
+                audioRef.current.powerUp("shield");
+                vibrate(30);
+                notifyRef.current(`${trRef.current("shield")} — ${trRef.current("pwEnd")}`, { kind: "warn", icon: "⛨", ttl: 1600 });
+                s.entities.splice(i, 1);
+              } else if (s.secondCharges > 0) {
+                // SECONDE CHANCE : on survit, les dangers proches sont pulvérisés
+                s.secondCharges--; setSecondCharges(s.secondCharges);
+                s.entities = s.entities.filter((o) => o.kind !== "hazard" || dist2(o, s.player) > 240 ** 2);
+                s.invuln = 2200; s.powers.shield = Math.max(s.powers.shield, 1800);
+                setPowers({ ...s.powers });
+                burst(s.player.x, s.player.y, POWER_MAP.second.color, 90, 2.4);
+                wave(s.player.x, s.player.y, POWER_MAP.second.color, 340, 6, 760);
+                wave(s.player.x, s.player.y, "#ffffff", 200, 3, 520);
+                s.shake = 22;
+                audioRef.current.reviveDone();
+                vibrate([40, 60, 40]);
+                notifyRef.current(trRef.current("secondUsed"), { kind: "epic", icon: "✚" });
               } else {
                 burst(s.player.x, s.player.y, "#ff2e6a", 80, 2.2);
-                s.shake = 28; audioRef.current.hit(); gameOverNow();
+                wave(s.player.x, s.player.y, "#ff2e6a", 280, 5, 620);
+                s.shake = 28; audioRef.current.hit(); vibrate([50, 30, 90]); gameOverNow();
               }
             }
           }
@@ -722,6 +928,19 @@ export default function NeonRush() {
           p.vx *= 0.97; p.vy *= 0.97;
           if (p.life > p.maxLife) s.particles.splice(i, 1);
         }
+      }
+
+      // Ondes + textes flottants continuent d'animer même à l'arrêt (fin de partie propre)
+      for (let i = s.waves.length - 1; i >= 0; i--) {
+        const w = s.waves[i];
+        w.life += dt;
+        w.r = 6 + (w.maxR - 6) * Math.min(1, w.life / w.maxLife);
+        if (w.life > w.maxLife) s.waves.splice(i, 1);
+      }
+      for (let i = s.popups.length - 1; i >= 0; i--) {
+        const p = s.popups[i];
+        p.life += dt; p.y += p.vy * (dt / 16);
+        if (p.life > p.maxLife) s.popups.splice(i, 1);
       }
 
       ctx.globalCompositeOperation = "lighter";
@@ -767,8 +986,8 @@ export default function NeonRush() {
           // Bright core
           ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(0, 0, e.r * 0.3, 0, Math.PI * 2); ctx.fill();
         } else if (e.kind === "power") {
-          const colors: Record<string, string> = { shield: "#a0ffea", slow: "#c39bff", magnet: "#ffb36b", x2: "#fff17a" };
-          const c = colors[e.power!] || "#fff17a";
+          const def = POWER_MAP[e.power as PowerId];
+          const c = def?.color || "#fff17a";
           const g = ctx.createRadialGradient(0, 0, 0, 0, 0, e.r * 3);
           g.addColorStop(0, c); g.addColorStop(1, "rgba(0,0,0,0)");
           ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, 0, e.r * 3, 0, Math.PI * 2); ctx.fill();
@@ -781,8 +1000,7 @@ export default function NeonRush() {
           ctx.closePath(); ctx.stroke();
           ctx.fillStyle = "#0b0620"; ctx.font = "bold 12px Orbitron, sans-serif";
           ctx.textAlign = "center"; ctx.textBaseline = "middle";
-          const label: Record<string, string> = { shield: "S", slow: "T", magnet: "M", x2: "×2" };
-          ctx.fillText(label[e.power!] || "?", 0, 1);
+          ctx.fillText(def?.glyph || "?", 0, 1);
         }
         ctx.restore();
       }
@@ -790,6 +1008,24 @@ export default function NeonRush() {
         const a = 1 - p.life / p.maxLife;
         ctx.fillStyle = p.color; ctx.globalAlpha = a;
         ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2); ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+
+      // Ondes de choc
+      for (const w of s.waves) {
+        const a = 1 - w.life / w.maxLife;
+        ctx.globalAlpha = a * 0.9;
+        ctx.strokeStyle = w.color; ctx.lineWidth = w.width * a + 0.5;
+        ctx.beginPath(); ctx.arc(w.x, w.y, w.r, 0, Math.PI * 2); ctx.stroke();
+      }
+      // Scores flottants
+      ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      for (const p of s.popups) {
+        const a = 1 - p.life / p.maxLife;
+        ctx.globalAlpha = a;
+        ctx.fillStyle = p.color;
+        ctx.font = `bold ${p.size}px Orbitron, sans-serif`;
+        ctx.fillText(p.text, p.x, p.y);
       }
       ctx.globalAlpha = 1;
 
@@ -970,6 +1206,13 @@ export default function NeonRush() {
     <main className="scanlines relative h-screen w-screen overflow-hidden">
       <canvas ref={canvasRef} className="absolute inset-0 h-full w-full" style={{ touchAction: "none" }} />
       <div className="scanlines-overlay" />
+      {recordFlash && <div className="pointer-events-none absolute inset-0 z-40 animate-[hud-flash_0.9s_ease-out]" />}
+      <NeonNotifications list={notifs} onDismiss={dismissNotif} />
+      {secondCharges > 0 && (
+        <div className="pointer-events-none absolute bottom-24 left-1/2 z-20 -translate-x-1/2 rounded-full border border-[#7dff9b]/60 bg-black/50 px-4 py-1 text-xs font-bold tracking-widest text-[#7dff9b]">
+          ✚ ×{secondCharges}
+        </div>
+      )}
 
       {/* HUD */}
       <header className="pointer-events-none absolute inset-x-0 top-0 z-10 flex items-start justify-between p-3 sm:p-6">
