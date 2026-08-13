@@ -382,9 +382,14 @@ export default function NeonRush() {
   const stateRef = useRef({
     player: { x: 0, y: 0, r: 14, tx: 0, ty: 0, trail: [] as Vec[] },
     entities: [] as Entity[], particles: [] as Entity[],
+    waves: [] as Wave[], popups: [] as Popup[],
     t: 0, lastSpawn: 0, lastPower: 0, shake: 0,
     combo: 0, comboTimer: 0, score: 0, maxCombo: 0,
-    powers: { shield: 0, slow: 0, magnet: 0, x2: 0 },
+    powers: emptyTimers(),
+    secondCharges: 0, invuln: 0,
+    /** qualité adaptative des effets (1 = plein, 0.5 = mobile en difficulté) */
+    q: 1, fpsAcc: 0, fpsFrames: 0,
+    bestAtStart: 0, recordFired: false,
     dpr: 1, w: 0, h: 0, over: false, running: false, difficulty: 1,
     mode: "classic" as GameMode,
     skinColors: equippedSkin.colors as [string, string, string],
@@ -395,17 +400,25 @@ export default function NeonRush() {
     duo: false,
   });
 
+  const notifyRef = useRef(notify);
+  useEffect(() => { notifyRef.current = notify; }, [notify]);
+  const trRef = useRef((k: string) => t(lang, k));
+  useEffect(() => { trRef.current = (k: string) => t(lang, k); }, [lang]);
+
   const start = useCallback(async (m: GameMode, opts?: { duo?: boolean; durationMs?: number }) => {
     await audioRef.current.start();
     const s = stateRef.current;
-    s.entities = []; s.particles = [];
+    s.entities = []; s.particles = []; s.waves = []; s.popups = [];
     s.player.x = s.w / 2; s.player.y = s.h / 2;
     s.player.tx = s.player.x; s.player.ty = s.player.y; s.player.trail = [];
     s.t = 0; s.lastSpawn = 0; s.lastPower = 0;
     s.combo = 0; s.comboTimer = 0; s.score = 0; s.shake = 0; s.maxCombo = 0;
     s.runOrbs = 0; s.runPowers = 0;
-    s.powers = { shield: 0, slow: 0, magnet: 0, x2: 0 };
-    s.over = false; s.running = true; s.difficulty = m === "hardcore" ? 1.5 : 1;
+    s.powers = emptyTimers();
+    s.secondCharges = 0; s.invuln = 0;
+    s.q = 1; s.fpsAcc = 0; s.fpsFrames = 0;
+    s.bestAtStart = prog.bestByMode[m] || 0; s.recordFired = false;
+    s.over = false; s.difficulty = m === "hardcore" ? 1.5 : 1;
     s.mode = m;
     s.duo = !!opts?.duo;
     const sk = SKINS.find((k) => k.id === prog.equipped) || SKINS[0];
@@ -414,10 +427,32 @@ export default function NeonRush() {
     s.skinRarity = sk.rarity;
     s.duration = opts?.durationMs ?? (m === "blitz" ? 60000 : 0);
     setMode(m); setScore(0); setCombo(0);
-    setPowers({ shield: 0, slow: 0, magnet: 0, x2: 0 });
+    setPowers(emptyTimers()); setSecondCharges(0); setRecordFlash(false); setReviveHold(0);
+    clearNotifs();
     setTimeLeft(s.duration > 0 ? Math.ceil(s.duration / 1000) : 0);
     setGameOver(false); setRunning(true); setPanel(null); setRewardEarned(null);
-  }, [prog.equipped]);
+    // Compte à rebours arcade (le Duo démarre sur le chrono serveur, sans délai)
+    if (opts?.duo) { s.running = true; setCountdown(0); }
+    else { s.running = false; setCountdown(3); }
+  }, [prog.equipped, prog.bestByMode, clearNotifs]);
+
+  // Compte à rebours 3 · 2 · 1 · GO
+  useEffect(() => {
+    if (countdown <= 0) return;
+    audioRef.current.countBeep(countdown === 1);
+    const id = window.setTimeout(() => {
+      setCountdown((c) => {
+        const n = c - 1;
+        if (n <= 0) {
+          const s = stateRef.current;
+          if (!s.over) { s.running = true; s.waves.push({ x: s.w / 2, y: s.h / 2, r: 10, maxR: Math.max(s.w, s.h) * 0.7, life: 0, maxLife: 520, color: s.skinColors[1], width: 4 }); }
+          audioRef.current.countBeep(true);
+        }
+        return Math.max(0, n);
+      });
+    }, 620);
+    return () => window.clearTimeout(id);
+  }, [countdown]);
 
   /* ---- Duo COOP orchestration: the network never touches the render loop ---- */
   const duoActive = !!duo.room && duo.room.status === "playing";
