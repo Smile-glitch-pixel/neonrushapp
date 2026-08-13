@@ -649,8 +649,8 @@ export default function NeonRush() {
           setTimeLeft(Math.ceil(left / 1000));
           if (left <= 0) { gameOverNow(); }
         }
-        const spawnBase = s.mode === "zen" ? 1200 : 700;
-        const spawnMin = s.mode === "zen" ? 700 : 260;
+        const spawnBase = 700;
+        const spawnMin = 260;
         const spawnRate = Math.max(spawnMin, spawnBase - s.t * 0.05);
         if (s.t - s.lastSpawn > spawnRate) {
           spawn(); if (Math.random() < 0.15 * s.difficulty) spawn(); s.lastSpawn = s.t;
