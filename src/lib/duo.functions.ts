@@ -96,10 +96,11 @@ export const duoJoinRoom = createServerFn({ method: "POST" })
 export const duoRoomState = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input: unknown) => IdSchema.parse(input))
-  .handler(async ({ data, context }) => {
+  .handler(async ({ data, context }): Promise<DuoRoomState | null> => {
     await context.supabase.rpc("duo_heartbeat", { _room: data.room_id });
     await context.supabase.rpc("duo_tick", { _room: data.room_id });
-    return readRoom(context.supabase, data.room_id);
+    // La salle peut avoir été supprimée (expirée / quittée) : pas une erreur.
+    return await readRoom(context.supabase, data.room_id).catch(() => null);
   });
 
 /** L'hôte lance la partie coopérative (chrono serveur partagé). */
