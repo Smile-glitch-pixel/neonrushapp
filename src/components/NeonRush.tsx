@@ -759,6 +759,13 @@ export default function NeonRush() {
 
     const loop = (now: number) => {
       const dt = Math.min(48, now - last); last = now;
+      // Qualité adaptative : si le mobile souffre, on réduit les particules (jamais le contrôle)
+      s.fpsAcc += dt; s.fpsFrames++;
+      if (s.fpsFrames >= 45) {
+        const avg = s.fpsAcc / s.fpsFrames;
+        s.q = avg > 26 ? 0.4 : avg > 20 ? 0.7 : 1;
+        s.fpsAcc = 0; s.fpsFrames = 0;
+      }
       ctx.fillStyle = "rgba(10, 8, 22, 0.35)"; ctx.fillRect(0, 0, s.w, s.h);
       ctx.save(); ctx.globalAlpha = 0.25; ctx.strokeStyle = "#3a1b6a"; ctx.lineWidth = 1;
       const gs = 40; const off = (s.t * 0.03) % gs;
