@@ -1011,6 +1011,24 @@ export default function NeonRush() {
       }
       ctx.globalAlpha = 1;
 
+      // Ondes de choc
+      for (const w of s.waves) {
+        const a = 1 - w.life / w.maxLife;
+        ctx.globalAlpha = a * 0.9;
+        ctx.strokeStyle = w.color; ctx.lineWidth = w.width * a + 0.5;
+        ctx.beginPath(); ctx.arc(w.x, w.y, w.r, 0, Math.PI * 2); ctx.stroke();
+      }
+      // Scores flottants
+      ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      for (const p of s.popups) {
+        const a = 1 - p.life / p.maxLife;
+        ctx.globalAlpha = a;
+        ctx.fillStyle = p.color;
+        ctx.font = `bold ${p.size}px Orbitron, sans-serif`;
+        ctx.fillText(p.text, p.x, p.y);
+      }
+      ctx.globalAlpha = 1;
+
       // Player with skin
       const pr = s.player.r;
       const hasShield = s.powers.shield > 0;
