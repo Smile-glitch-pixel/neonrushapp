@@ -690,17 +690,53 @@ export default function NeonRush() {
       });
     };
     const spawnPower = () => {
-      if (s.mode === "hardcore") return;
-      const kinds: Array<"shield" | "slow" | "magnet" | "x2"> = ["shield", "slow", "magnet", "x2"];
-      const power = kinds[Math.floor(Math.random() * kinds.length)];
-      s.entities.push({ x: rand(60, s.w - 60), y: rand(60, s.h - 60), vx: 0, vy: 0, r: 14, life: 0, maxLife: 8000, kind: "power", color: "#fff17a", power, angle: 0, spin: 0.03 });
+      const def = rollPower();
+      s.entities.push({
+        x: rand(60, Math.max(70, s.w - 60)), y: rand(60, Math.max(70, s.h - 60)),
+        vx: 0, vy: 0, r: 15, life: 0, maxLife: 9000,
+        kind: "power", color: def.color, power: def.id, angle: 0, spin: 0.03,
+      });
     };
+    /** Explosion de particules (quantité adaptée aux performances) */
     const burst = (x: number, y: number, color: string, count = 24, force = 1) => {
-      for (let i = 0; i < count; i++) {
+      const n = Math.max(4, Math.round(count * s.q));
+      for (let i = 0; i < n; i++) {
         const a = Math.random() * Math.PI * 2;
         const sp = rand(1, 6) * force;
         s.particles.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, r: rand(1, 3), life: 0, maxLife: rand(400, 900), kind: "particle", color });
       }
+    };
+    /** Onde de choc */
+    const wave = (x: number, y: number, color: string, maxR = 160, width = 3, ms = 480) => {
+      s.waves.push({ x, y, r: 6, maxR, life: 0, maxLife: ms, color, width });
+    };
+    /** Texte flottant */
+    const popup = (x: number, y: number, text: string, color: string, size = 14) => {
+      s.popups.push({ x, y, text, color, size, life: 0, maxLife: 900, vy: -0.6 });
+    };
+    /** Active un power-up : effet réel + feedback complet */
+    const activatePower = (id: PowerId, x: number, y: number) => {
+      const def = POWER_MAP[id];
+      s.runPowers++;
+      if (id === "second") {
+        s.secondCharges = Math.min(2, s.secondCharges + 1);
+        setSecondCharges(s.secondCharges);
+      } else {
+        s.powers[id] = def.durationMs;
+        setPowers({ ...s.powers });
+      }
+      if (id === "boost") s.invuln = Math.max(s.invuln, 400);
+      burst(x, y, def.color, 46, 1.5);
+      wave(x, y, def.color, 190, 4, 520);
+      wave(s.player.x, s.player.y, def.color, 120, 2, 380);
+      popup(x, y - 18, `${trRef.current(def.labelKey)}`, def.color, 15);
+      audioRef.current.powerUp(id);
+      vibrate(id === "second" ? [20, 40, 20, 40, 30] : 22);
+      notifyRef.current(`${trRef.current(def.labelKey)} ${trRef.current("pwOn")}`, {
+        kind: id === "second" ? "epic" : "success", icon: def.glyph, color: def.color,
+      });
+      if (s.duo) notifyRef.current(trRef.current(def.coopKey), { kind: "info", icon: "🤝", ttl: 1800 });
+      s.shake = Math.max(s.shake, 8);
     };
     const gameOverNow = (byTime = false) => {
       const fs = Math.floor(s.score);
