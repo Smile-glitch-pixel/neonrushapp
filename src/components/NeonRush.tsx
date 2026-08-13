@@ -859,27 +859,65 @@ export default function NeonRush() {
           const rr = (e.r + s.player.r) ** 2;
           if (dist2(e, s.player) < rr) {
             if (e.kind === "orb") {
-              s.combo++; s.comboTimer = 1800; if (s.combo > s.maxCombo) s.maxCombo = s.combo;
-              const mul = s.powers.x2 > 0 ? 2 : 1;
-              const gain = (10 + s.combo * 2) * mul;
+              s.combo++; s.comboTimer = 1800;
+              const comboUp = s.combo > s.maxCombo;
+              if (comboUp) s.maxCombo = s.combo;
+              const mul = (s.powers.x2 > 0 ? 2 : 1) * (s.powers.boost > 0 ? 1.25 : 1);
+              const gain = Math.round((10 + s.combo * 2) * mul);
               s.score += gain; setScore(Math.floor(s.score)); setCombo(s.combo);
               audioRef.current.pickup(s.combo);
               burst(e.x, e.y, s.skinColors[1], Math.round(18 * s.skinFx.particles), 1);
+              popup(e.x, e.y, `+${gain}`, s.powers.x2 > 0 ? POWER_MAP.x2.color : s.skinColors[1], s.powers.x2 > 0 ? 16 : 13);
+              if (s.combo > 0 && s.combo % 10 === 0) {
+                wave(s.player.x, s.player.y, POWER_MAP.x2.color, 200, 3, 460);
+                popup(s.player.x, s.player.y - 34, `×${s.combo}`, "#fff17a", 20);
+                vibrate(12);
+              }
+              // Nouveau record en direct
+              if (!s.recordFired && s.bestAtStart > 0 && s.score > s.bestAtStart) {
+                s.recordFired = true;
+                audioRef.current.record();
+                wave(s.player.x, s.player.y, "#fff17a", 320, 5, 700);
+                burst(s.player.x, s.player.y, "#fff17a", 60, 2);
+                vibrate([30, 50, 30]);
+                notifyRef.current(trRef.current("newRecord"), { kind: "epic", icon: "🏆" });
+                setRecordFlash(true);
+                window.setTimeout(() => setRecordFlash(false), 900);
+              }
               s.entities.splice(i, 1);
               s.runOrbs++;
             } else if (e.kind === "power" && e.power) {
-              s.powers[e.power] = 6000; setPowers({ ...s.powers });
-              audioRef.current.power(); burst(e.x, e.y, "#fff17a", 40, 1.4);
+              activatePower(e.power, e.x, e.y);
               s.entities.splice(i, 1);
-              s.runPowers++;
             } else if (e.kind === "hazard") {
-              if (s.powers.shield > 0) {
+              if (s.invuln > 0) {
+                // rien : fenêtre d'invulnérabilité (retour en jeu / turbo)
+              } else if (s.powers.shield > 0) {
                 s.powers.shield = 0; setPowers({ ...s.powers });
-                burst(e.x, e.y, "#a0ffea", 40, 1.6); s.shake = 14;
-                audioRef.current.power(); s.entities.splice(i, 1);
+                burst(e.x, e.y, POWER_MAP.shield.color, 44, 1.6);
+                wave(s.player.x, s.player.y, POWER_MAP.shield.color, 200, 5, 480);
+                s.shake = 16; s.invuln = 350;
+                audioRef.current.powerUp("shield");
+                vibrate(30);
+                notifyRef.current(`${trRef.current("shield")} — ${trRef.current("pwEnd")}`, { kind: "warn", icon: "⛨", ttl: 1600 });
+                s.entities.splice(i, 1);
+              } else if (s.secondCharges > 0) {
+                // SECONDE CHANCE : on survit, les dangers proches sont pulvérisés
+                s.secondCharges--; setSecondCharges(s.secondCharges);
+                s.entities = s.entities.filter((o) => o.kind !== "hazard" || dist2(o, s.player) > 240 ** 2);
+                s.invuln = 2200; s.powers.shield = Math.max(s.powers.shield, 1800);
+                setPowers({ ...s.powers });
+                burst(s.player.x, s.player.y, POWER_MAP.second.color, 90, 2.4);
+                wave(s.player.x, s.player.y, POWER_MAP.second.color, 340, 6, 760);
+                wave(s.player.x, s.player.y, "#ffffff", 200, 3, 520);
+                s.shake = 22;
+                audioRef.current.reviveDone();
+                vibrate([40, 60, 40]);
+                notifyRef.current(trRef.current("secondUsed"), { kind: "epic", icon: "✚" });
               } else {
                 burst(s.player.x, s.player.y, "#ff2e6a", 80, 2.2);
-                s.shake = 28; audioRef.current.hit(); gameOverNow();
+                wave(s.player.x, s.player.y, "#ff2e6a", 280, 5, 620);
+                s.shake = 28; audioRef.current.hit(); vibrate([50, 30, 90]); gameOverNow();
               }
             }
           }
@@ -890,6 +928,19 @@ export default function NeonRush() {
           p.vx *= 0.97; p.vy *= 0.97;
           if (p.life > p.maxLife) s.particles.splice(i, 1);
         }
+      }
+
+      // Ondes + textes flottants continuent d'animer même à l'arrêt (fin de partie propre)
+      for (let i = s.waves.length - 1; i >= 0; i--) {
+        const w = s.waves[i];
+        w.life += dt;
+        w.r = 6 + (w.maxR - 6) * Math.min(1, w.life / w.maxLife);
+        if (w.life > w.maxLife) s.waves.splice(i, 1);
+      }
+      for (let i = s.popups.length - 1; i >= 0; i--) {
+        const p = s.popups[i];
+        p.life += dt; p.y += p.vy * (dt / 16);
+        if (p.life > p.maxLife) s.popups.splice(i, 1);
       }
 
       ctx.globalCompositeOperation = "lighter";
