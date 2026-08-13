@@ -1167,6 +1167,11 @@ export default function NeonRush() {
                     <div className="mt-1 text-[10px] uppercase tracking-[0.2em] text-glow-yellow">{tr("best")}: {prog.bestByMode[m.id]}</div>
                   </button>
                 ))}
+                <button onClick={() => setPanel("duo")} className="w-full rounded-xl border border-[color:var(--neon-magenta)]/60 bg-[color:var(--neon-magenta)]/10 p-3 text-left transition hover:border-[color:var(--neon-magenta)]">
+                  <div className="font-display text-lg font-black text-glow-magenta uppercase tracking-widest">🤝 {tr("duo")}</div>
+                  <div className="text-xs text-muted-foreground">{tr("duoDesc")}</div>
+                  <div className="mt-1 text-[10px] uppercase tracking-[0.2em] text-glow-yellow">{tr("duoTeamBest")}: {prog.duoBest ?? 0}</div>
+                </button>
               </div>
             )}
 
