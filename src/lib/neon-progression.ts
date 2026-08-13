@@ -175,7 +175,7 @@ export const REWARD_MULT: Record<GameMode, number> = {
 export const MODES: { id: GameMode; nameKey: string; descKey: string }[] = [
   { id: "classic", nameKey: "modeClassic", descKey: "modeClassicDesc" },
   { id: "hardcore", nameKey: "modeHardcore", descKey: "modeHardcoreDesc" },
-  { id: "zen", nameKey: "modeZen", descKey: "modeZenDesc" },
+  
   { id: "blitz", nameKey: "modeBlitz", descKey: "modeBlitzDesc" },
 ];
 
