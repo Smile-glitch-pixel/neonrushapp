@@ -584,7 +584,7 @@ export default function NeonRush() {
       const dx = towards.x - x, dy = towards.y - y;
       const len = Math.hypot(dx, dy) || 1;
       const speed = rand(1.2, 2.4) * s.difficulty;
-      const hazardChance = s.mode === "zen" ? 0.05 : s.mode === "hardcore" ? 0.55 : 0.32;
+      const hazardChance = s.mode === "hardcore" ? 0.55 : 0.32;
       const isHazard = Math.random() < hazardChance;
       s.entities.push({
         x, y, vx: (dx / len) * speed, vy: (dy / len) * speed,
