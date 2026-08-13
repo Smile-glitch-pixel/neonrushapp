@@ -792,22 +792,47 @@ export default function NeonRush() {
         if (s.t - s.lastSpawn > spawnRate) {
           spawn(); if (Math.random() < 0.15 * s.difficulty) spawn(); s.lastSpawn = s.t;
         }
-        if (s.mode !== "hardcore" && s.t - s.lastPower > 9000) { spawnPower(); s.lastPower = s.t; }
+        // Hardcore aussi a droit aux power-ups (plus rares) : ils sont indispensables au feeling
+        const powerEvery = s.mode === "hardcore" ? 13000 : 8500;
+        if (s.t - s.lastPower > powerEvery) { spawnPower(); s.lastPower = s.t; }
 
         // Tight tracking for touch/mouse (input already snaps on touch); smooth for keyboard
-        s.player.x += (s.player.tx - s.player.x) * 0.55;
-        s.player.y += (s.player.ty - s.player.y) * 0.55;
+        const boosting = s.powers.boost > 0;
+        const follow = boosting ? 0.72 : 0.55;
+        s.player.x += (s.player.tx - s.player.x) * follow;
+        s.player.y += (s.player.ty - s.player.y) * follow;
         s.player.x = Math.max(s.player.r, Math.min(s.w - s.player.r, s.player.x));
         s.player.y = Math.max(s.player.r, Math.min(s.h - s.player.r, s.player.y));
         s.player.trail.push({ x: s.player.x, y: s.player.y });
-        if (s.player.trail.length > s.skinFx.trailLen) s.player.trail.shift();
+        const trailLen = s.skinFx.trailLen + (boosting ? 10 : 0);
+        while (s.player.trail.length > trailLen) s.player.trail.shift();
+        // Trainée de vitesse
+        if (boosting && Math.random() < 0.7 * s.q) {
+          const a = Math.random() * Math.PI * 2;
+          s.particles.push({ x: s.player.x, y: s.player.y, vx: Math.cos(a) * 1.2, vy: Math.sin(a) * 1.2, r: rand(1, 2.5), life: 0, maxLife: 380, kind: "particle", color: POWER_MAP.boost.color });
+        }
 
-        (Object.keys(s.powers) as Array<keyof typeof s.powers>).forEach((k) => { s.powers[k] = Math.max(0, s.powers[k] - dt); });
+        // Décompte des effets + animation de fin
+        POWER_IDS.forEach((k) => {
+          const before = s.powers[k];
+          if (before <= 0) return;
+          const next = Math.max(0, before - dt);
+          s.powers[k] = next;
+          if (next === 0) {
+            const def = POWER_MAP[k];
+            wave(s.player.x, s.player.y, def.color, 130, 2, 420);
+            burst(s.player.x, s.player.y, def.color, 16, 1);
+            audioRef.current.expire();
+            notifyRef.current(`${trRef.current(def.labelKey)} ${trRef.current("pwEnd")}`, { kind: "warn", icon: def.glyph, ttl: 1500 });
+            setPowers({ ...s.powers });
+          }
+        });
+        s.invuln = Math.max(0, s.invuln - dt);
         s.comboTimer = Math.max(0, s.comboTimer - dt);
         if (s.comboTimer === 0 && s.combo > 0) s.combo = 0;
 
         const slowFactor = s.powers.slow > 0 ? 0.35 : 1;
-        const magnetR = s.powers.magnet > 0 ? 180 : 0;
+        const magnetR = s.powers.magnet > 0 ? 210 : 0;
 
         for (let i = s.entities.length - 1; i >= 0; i--) {
           const e = s.entities[i];
@@ -817,8 +842,14 @@ export default function NeonRush() {
           } else {
             if (magnetR && e.kind === "orb") {
               const dx = s.player.x - e.x, dy = s.player.y - e.y;
-              const d = Math.hypot(dx, dy);
-              if (d < magnetR) { e.vx += (dx / d) * 0.4; e.vy += (dy / d) * 0.4; }
+              const d = Math.hypot(dx, dy) || 1;
+              if (d < magnetR) {
+                e.vx += (dx / d) * 0.55; e.vy += (dy / d) * 0.55;
+                // Filet de particules vers le joueur
+                if (Math.random() < 0.25 * s.q) {
+                  s.particles.push({ x: e.x, y: e.y, vx: (dx / d) * 3, vy: (dy / d) * 3, r: 1.4, life: 0, maxLife: 320, kind: "particle", color: POWER_MAP.magnet.color });
+                }
+              }
             }
             e.x += e.vx * slowFactor * (dt / 16);
             e.y += e.vy * slowFactor * (dt / 16);
