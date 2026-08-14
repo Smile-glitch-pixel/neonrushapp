@@ -58,6 +58,33 @@ export type Database = {
           },
         ]
       }
+      economy_events: {
+        Row: {
+          created_at: string
+          id: string
+          kind: string
+          payload: Json
+          ref: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          kind: string
+          payload?: Json
+          ref: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          kind?: string
+          payload?: Json
+          ref?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       leaderboard_scores: {
         Row: {
           created_at: string
@@ -93,34 +120,58 @@ export type Database = {
       }
       player_state: {
         Row: {
+          achievements: Json
           best_by_mode: Json
           claimed: Json
           coins: number
           equipped: string
+          gems: number
+          inventory: Json
+          level: number
+          missions: Json
           owned: Json
+          pass_claimed: Json
+          purchases: Json
           settings: Json
+          stats: Json
           updated_at: string
           user_id: string
           xp: number
         }
         Insert: {
+          achievements?: Json
           best_by_mode?: Json
           claimed?: Json
           coins?: number
           equipped?: string
+          gems?: number
+          inventory?: Json
+          level?: number
+          missions?: Json
           owned?: Json
+          pass_claimed?: Json
+          purchases?: Json
           settings?: Json
+          stats?: Json
           updated_at?: string
           user_id: string
           xp?: number
         }
         Update: {
+          achievements?: Json
           best_by_mode?: Json
           claimed?: Json
           coins?: number
           equipped?: string
+          gems?: number
+          inventory?: Json
+          level?: number
+          missions?: Json
           owned?: Json
+          pass_claimed?: Json
+          purchases?: Json
           settings?: Json
+          stats?: Json
           updated_at?: string
           user_id?: string
           xp?: number
@@ -251,6 +302,51 @@ export type Database = {
           status?: string
           survived_ms?: number
           team_score?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      store_offers: {
+        Row: {
+          active: boolean
+          contents: Json
+          created_at: string
+          currency: string
+          ends_at: string | null
+          id: string
+          kind: string
+          once_per_player: boolean
+          price: number
+          starts_at: string
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          contents?: Json
+          created_at?: string
+          currency?: string
+          ends_at?: string | null
+          id: string
+          kind?: string
+          once_per_player?: boolean
+          price?: number
+          starts_at?: string
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          contents?: Json
+          created_at?: string
+          currency?: string
+          ends_at?: string | null
+          id?: string
+          kind?: string
+          once_per_player?: boolean
+          price?: number
+          starts_at?: string
+          title?: string
           updated_at?: string
         }
         Relationships: []
