@@ -292,12 +292,24 @@ export const findTemplate = (id: string): MissionTemplate | undefined =>
 /* ---------------- Progression storage ---------------- */
 export type Progression = {
   coins: number;
+  /** Monnaie premium, gagnée uniquement via succès, Battle Pass et offres. */
+  gems: number;
   xp: number;
+  /** Niveau dérivé de l'XP (calculé, jamais choisi par le client). */
+  level: number;
   claimed: number[];
   owned: SkinId[];
   equipped: SkinId;
   bestByMode: Record<GameMode, number>;
   missions: MissionsData;
+  /** Coffres possédés (gagnés via Pass / boutique). */
+  inventory: { coinChests?: number; gemChests?: number };
+  /** Succès réclamés. */
+  achievements: Record<string, { claimed?: boolean }>;
+  /** Statistiques cumulées de carrière. */
+  stats: Record<string, number>;
+  /** Offres déjà achetées (limite une fois par joueur). */
+  purchases: string[];
   displayName?: string;
   /** Meilleur score d'équipe en Duo Coop (jamais un score individuel). */
   duoBest?: number;
@@ -309,12 +321,18 @@ const KEY = "neon-rush-prog-v2";
 
 export const defaultProg = (): Progression => ({
   coins: 0,
+  gems: 0,
   xp: 0,
+  level: 1,
   claimed: [],
   owned: ["cyan"],
   equipped: "cyan",
   bestByMode: { classic: 0, hardcore: 0, zen: 0, blitz: 0 },
   missions: generateMissions(),
+  inventory: {},
+  achievements: {},
+  stats: {},
+  purchases: [],
   duoBest: 0,
   duoRevives: 0,
 });
