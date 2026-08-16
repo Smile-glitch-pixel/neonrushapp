@@ -14,15 +14,26 @@ const StateSchema = z.object({
     zen: z.number().int().min(0),
     blitz: z.number().int().min(0),
   }),
+  gems: z.number().int().min(0).optional(),
+  level: z.number().int().min(1).optional(),
+  inventory: z.record(z.string(), z.number().int().min(0)).optional(),
+  achievements: z.record(z.string(), z.object({ claimed: z.boolean().optional() })).optional(),
+  stats: z.record(z.string(), z.number()).optional(),
+  purchases: z.array(z.string()).optional(),
+  missions: z.any().optional(),
+  pass_claimed: z.array(z.number().int().min(0)).optional(),
   settings: z.record(z.string(), z.any()).optional(),
 });
+
+const SELECT =
+  "coins, xp, claimed, owned, equipped, best_by_mode, settings, gems, level, inventory, achievements, stats, purchases, missions, pass_claimed, updated_at";
 
 export const pullPlayerState = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     const { data, error } = await context.supabase
       .from("player_state")
-      .select("coins, xp, claimed, owned, equipped, best_by_mode, settings, updated_at")
+      .select(SELECT)
       .eq("user_id", context.userId)
       .maybeSingle();
     if (error) throw error;
@@ -43,6 +54,14 @@ export const pushPlayerState = createServerFn({ method: "POST" })
         owned: data.owned,
         equipped: data.equipped,
         best_by_mode: data.best_by_mode,
+        gems: data.gems ?? 0,
+        level: data.level ?? 1,
+        inventory: (data.inventory ?? {}) as never,
+        achievements: (data.achievements ?? {}) as never,
+        stats: (data.stats ?? {}) as never,
+        purchases: (data.purchases ?? []) as never,
+        missions: (data.missions ?? {}) as never,
+        pass_claimed: (data.pass_claimed ?? []) as never,
         settings: (data.settings ?? {}) as never,
       }, { onConflict: "user_id" });
     if (error) throw error;
