@@ -308,8 +308,13 @@ export type Progression = {
   achievements: Record<string, { claimed?: boolean }>;
   /** Statistiques cumulées de carrière. */
   stats: Record<string, number>;
-  /** Offres déjà achetées (limite une fois par joueur). */
+  /** Offres et power-ups permanents déjà achetés (`pw:<id>` pour les perks). */
   purchases: string[];
+  /** Power-ups permanents équipés (5 max). */
+  loadout: string[];
+  /** Jour UTC du compteur de coffres + coffres ouverts ce jour-là. */
+  chestDay?: string;
+  chestUsed?: number;
   displayName?: string;
   /** Meilleur score d'équipe en Duo Coop (jamais un score individuel). */
   duoBest?: number;
@@ -333,6 +338,9 @@ export const defaultProg = (): Progression => ({
   achievements: {},
   stats: {},
   purchases: [],
+  loadout: [],
+  chestDay: undefined,
+  chestUsed: 0,
   duoBest: 0,
   duoRevives: 0,
 });

@@ -17,7 +17,10 @@ export type RemoteState = {
   purchases?: string[] | null;
   missions?: MissionsData | null;
   pass_claimed?: number[] | null;
-  settings?: Record<string, unknown> & { missions?: MissionsData; displayName?: string; duoBest?: number; duoRevives?: number };
+  settings?: Record<string, unknown> & {
+    missions?: MissionsData; displayName?: string; duoBest?: number; duoRevives?: number;
+    loadout?: string[]; chestDay?: string; chestUsed?: number;
+  };
 };
 
 const mergeNumberMap = (
@@ -80,6 +83,14 @@ export const mergeProg = (local: Progression, remote: RemoteState | null | undef
     achievements,
     stats: mergeNumberMap(local.stats, remote.stats),
     purchases: Array.from(new Set([...(local.purchases ?? []), ...(remote.purchases ?? [])])),
+    loadout: (remote.settings?.loadout?.length ? remote.settings.loadout : local.loadout) ?? [],
+    chestDay: remote.settings?.chestDay ?? local.chestDay,
+    chestUsed:
+      remote.settings?.chestDay && remote.settings.chestDay === local.chestDay
+        ? Math.max(local.chestUsed ?? 0, remote.settings.chestUsed ?? 0)
+        : (remote.settings?.chestDay && remote.settings.chestDay !== local.chestDay
+            ? (local.chestDay ? (local.chestUsed ?? 0) : (remote.settings.chestUsed ?? 0))
+            : local.chestUsed ?? 0),
     displayName: remote.settings?.displayName || local.displayName,
     duoBest: Math.max(local.duoBest ?? 0, remote.settings?.duoBest ?? 0),
     duoRevives: Math.max(local.duoRevives ?? 0, remote.settings?.duoRevives ?? 0),
@@ -101,5 +112,8 @@ export const progToRemote = (p: Progression): RemoteState => ({
   purchases: p.purchases ?? [],
   missions: p.missions,
   pass_claimed: p.claimed,
-  settings: { missions: p.missions, displayName: p.displayName, duoBest: p.duoBest ?? 0, duoRevives: p.duoRevives ?? 0 },
+  settings: {
+    missions: p.missions, displayName: p.displayName, duoBest: p.duoBest ?? 0, duoRevives: p.duoRevives ?? 0,
+    loadout: p.loadout ?? [], chestDay: p.chestDay, chestUsed: p.chestUsed ?? 0,
+  },
 });
