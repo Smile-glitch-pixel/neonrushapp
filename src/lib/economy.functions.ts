@@ -7,6 +7,9 @@ import {
   type ChestKind, type OfferContents, type StatKey, type Stats,
 } from "@/lib/economy";
 import { loadEconomy, saveEconomy, logEvent, grant } from "@/lib/economy.server";
+import {
+  findPerk, perkKey, perkUnlocked, MAX_LOADOUT, DAILY_CHEST_LIMIT, chestDayKey, msUntilChestReset,
+} from "@/lib/perks";
 
 /** État économique complet (source de vérité serveur). */
 export const economySnapshot = createServerFn({ method: "GET" })
@@ -59,6 +62,17 @@ export const economyOpenChest = createServerFn({ method: "POST" })
     if (!useInv) {
       const bal = cfg.currency === "coins" ? s.coins : s.gems;
       if (bal < cfg.cost) return { state: s, ok: false as const, reason: "NOT_ENOUGH" as const };
+    }
+    // Limite quotidienne de coffres (journal serveur = source de vérité)
+    const sinceDay = `${chestDayKey()}T00:00:00.000Z`;
+    const { count: chestCount } = await context.supabase
+      .from("economy_events")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", context.userId)
+      .eq("kind", "chest")
+      .gte("created_at", sinceDay);
+    if ((chestCount ?? 0) >= DAILY_CHEST_LIMIT) {
+      return { state: s, ok: false as const, reason: "DAILY_LIMIT" as const };
     }
     const drop = rollChest(kind, s.owned);
     if (useInv) s = { ...s, inventory: { ...s.inventory, [invKey]: held - 1 } };
@@ -219,4 +233,57 @@ export const economyConvertGems = createServerFn({ method: "POST" })
     s = await saveEconomy(context.supabase, context.userId, s);
     await logEvent(context.supabase, context.userId, "convert_gems", `${data.gems}`, { coins: data.gems * GEM_TO_COINS });
     return { state: s, ok: true as const, coins: data.gems * GEM_TO_COINS };
+  });
+
+/* ------------------------- Power-ups permanents (perks) ------------------------- */
+
+/** Achat d'un power-up permanent : la condition de déblocage est vérifiée serveur. */
+export const economyBuyPerk = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) => z.object({ perkId: z.string() }).parse(i))
+  .handler(async ({ data, context }) => {
+    const p = findPerk(data.perkId);
+    if (!p) throw new Error("PERK_UNKNOWN");
+    let s = await loadEconomy(context.supabase, context.userId);
+    if (s.purchases.includes(perkKey(p.id))) return { state: s, ok: false as const, reason: "OWNED" as const };
+    if (!perkUnlocked(p, s.stats)) return { state: s, ok: false as const, reason: "LOCKED" as const };
+    if (s.coins < p.cost) return { state: s, ok: false as const, reason: "NOT_ENOUGH" as const };
+    s = { ...s, coins: s.coins - p.cost, purchases: [...s.purchases, perkKey(p.id)] };
+    s = await saveEconomy(context.supabase, context.userId, s);
+    await logEvent(context.supabase, context.userId, "buy_perk", p.id, { cost: p.cost });
+    return { state: s, ok: true as const };
+  });
+
+/** Enregistre le chargement équipé (max 5, uniquement des perks possédés). */
+export const economySetLoadout = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((i: unknown) => z.object({ loadout: z.array(z.string()).max(MAX_LOADOUT) }).parse(i))
+  .handler(async ({ data, context }) => {
+    const s = await loadEconomy(context.supabase, context.userId);
+    const clean = Array.from(new Set(data.loadout))
+      .filter((id) => findPerk(id) && s.purchases.includes(perkKey(id)))
+      .slice(0, MAX_LOADOUT);
+    const { data: row } = await context.supabase
+      .from("player_state").select("settings").eq("user_id", context.userId).maybeSingle();
+    const settings = { ...((row?.settings as Record<string, unknown> | null) ?? {}), loadout: clean };
+    const { error } = await context.supabase
+      .from("player_state").update({ settings: settings as never }).eq("user_id", context.userId);
+    if (error) throw error;
+    return { ok: true as const, loadout: clean };
+  });
+
+/** Coffres restants aujourd'hui (reset à minuit UTC). Journal = source de vérité. */
+export const economyChestQuota = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const since = `${chestDayKey()}T00:00:00.000Z`;
+    const { count, error } = await context.supabase
+      .from("economy_events")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", context.userId)
+      .eq("kind", "chest")
+      .gte("created_at", since);
+    if (error) throw error;
+    const used = count ?? 0;
+    return { used, limit: DAILY_CHEST_LIMIT, left: Math.max(0, DAILY_CHEST_LIMIT - used), resetsInMs: msUntilChestReset() };
   });
