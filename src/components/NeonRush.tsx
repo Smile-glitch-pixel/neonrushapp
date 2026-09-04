@@ -1455,6 +1455,8 @@ export default function NeonRush() {
             {/* Nav tabs */}
             <div className="mt-5 grid grid-cols-2 gap-2 sm:grid-cols-3 text-xs uppercase tracking-[0.2em]">
               <button onClick={() => setPanel("modes")} className="panel-neon rounded-lg py-2 text-glow-cyan hover:scale-105 transition">{tr("mode")}</button>
+              <button onClick={() => setPanel("shop")} className="panel-neon rounded-lg py-2 text-glow-yellow hover:scale-105 transition">🎁 {tr("shop")}</button>
+              <button onClick={() => setPanel("perks")} className="panel-neon rounded-lg py-2 text-glow-cyan hover:scale-105 transition">⚡ {tr("powerups")}</button>
               <button onClick={() => setPanel("skins")} className="panel-neon rounded-lg py-2 text-glow-magenta hover:scale-105 transition">{tr("skins")}</button>
               <button onClick={() => setPanel("pass")} className="panel-neon rounded-lg py-2 text-glow-yellow hover:scale-105 transition">{tr("pass")}</button>
               <button onClick={() => setPanel("missions")} className="panel-neon rounded-lg py-2 text-glow-cyan hover:scale-105 transition">{tr("missions")}</button>
@@ -1501,27 +1503,112 @@ export default function NeonRush() {
             {panel === "skins" && (
               <div>
                 <div className="mb-3 flex items-center justify-between text-xs uppercase tracking-[0.2em]">
-                  <span className="text-glow-yellow">🪙 {prog.coins}</span>
-                  <button onClick={openChest} className="panel-neon rounded-lg px-3 py-1 text-glow-magenta hover:scale-105 transition">🎁 {tr("openChest")} · {CHEST_COST}</button>
+                  <span className="text-glow-cyan">{tr("ownedCount")} · {prog.owned.length}/{SKINS.length}</span>
+                  <button onClick={() => setPanel("shop")} className="panel-neon rounded-lg px-3 py-1 text-glow-yellow hover:scale-105 transition">🎁 {tr("shop")}</button>
                 </div>
-                <div className="grid grid-cols-2 gap-2">
-                  {SKINS.map((s) => {
-                    const owned = prog.owned.includes(s.id);
-                    const eq = prog.equipped === s.id;
-                    const rc = RARITY_COLOR[s.rarity];
-                    const locked = !owned && (s.chestOnly || s.passOnly);
+                <p className="mb-3 text-[11px] text-muted-foreground">{tr("collectionDesc")}</p>
+                <div className="grid grid-cols-2 gap-2 max-h-[60vh] overflow-y-auto">
+                  {SKINS.map((sk) => {
+                    const owned = prog.owned.includes(sk.id);
+                    const eq = prog.equipped === sk.id;
+                    const rc = RARITY_COLOR[sk.rarity];
                     return (
-                      <div key={s.id} className="rounded-xl border p-3" style={{ borderColor: `${rc}55`, background: `linear-gradient(180deg, ${rc}10, rgba(0,0,0,0.35))` }}>
-                        <div className="mx-auto h-12 w-12 rounded-full" style={{ background: `radial-gradient(circle at 30% 30%, ${s.colors[0]}, ${s.colors[1]} 50%, ${s.colors[2]})`, boxShadow: `0 0 24px ${rc}` }} />
-                        <div className="mt-2 text-center text-xs font-bold uppercase tracking-widest">{s.name}</div>
-                        <div className="text-center text-[10px] uppercase tracking-[0.25em] font-bold" style={{ color: rc, textShadow: `0 0 8px ${rc}` }}>{s.rarity}</div>
+                      <div key={sk.id} className={`rounded-xl border p-3 ${owned ? "" : "opacity-45"}`} style={{ borderColor: `${rc}55`, background: `linear-gradient(180deg, ${rc}10, rgba(0,0,0,0.35))` }}>
+                        <div className="mx-auto h-12 w-12 rounded-full" style={{ background: owned ? `radial-gradient(circle at 30% 30%, ${sk.colors[0]}, ${sk.colors[1]} 50%, ${sk.colors[2]})` : "rgba(255,255,255,0.06)", boxShadow: owned ? `0 0 24px ${rc}` : "none" }} />
+                        <div className="mt-2 text-center text-xs font-bold uppercase tracking-widest">{owned ? sk.name : "???"}</div>
+                        <div className="text-center text-[10px] uppercase tracking-[0.25em] font-bold" style={{ color: rc, textShadow: `0 0 8px ${rc}` }}>{sk.rarity}</div>
                         <button
-                          onClick={() => (owned ? equipSkin(s.id) : buySkin(s.id))}
-                          disabled={eq || locked}
-                          className={`mt-2 w-full rounded-lg px-2 py-1 text-[10px] font-bold uppercase tracking-widest transition ${eq ? "bg-[color:var(--neon-cyan)]/20 text-glow-cyan" : owned ? "bg-black/40 text-glow-magenta hover:scale-105" : locked ? "bg-black/40 text-muted-foreground" : "bg-black/40 text-glow-yellow hover:scale-105"}`}
+                          onClick={() => equipSkin(sk.id)}
+                          disabled={!owned || eq}
+                          className={`mt-2 w-full rounded-lg px-2 py-1 text-[10px] font-bold uppercase tracking-widest transition ${eq ? "bg-[color:var(--neon-cyan)]/20 text-glow-cyan" : owned ? "bg-black/40 text-glow-magenta hover:scale-105" : "bg-black/40 text-muted-foreground"}`}
                         >
-                          {eq ? tr("equipped") : owned ? tr("equip") : s.passOnly ? "🏆 Pass" : s.chestOnly ? "🎁 Coffre" : `${tr("buy")} · ${s.price} 🪙`}
+                          {eq ? tr("equipped") : owned ? tr("equip") : tr("notOwnedYet")}
                         </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {panel === "shop" && (
+              <div>
+                <div className="mb-3 flex items-center justify-between text-xs uppercase tracking-[0.2em]">
+                  <span className="text-glow-yellow">🪙 {prog.coins}</span>
+                  <span className="text-glow-cyan">{tr("chestsLeft")} · {chestLeft}/{DAILY_CHEST_LIMIT}</span>
+                </div>
+                <p className="mb-4 text-[11px] text-muted-foreground">{tr("shopDesc")}</p>
+                <div className="rounded-2xl border border-[color:var(--neon-yellow)]/50 bg-gradient-to-b from-[color:var(--neon-yellow)]/10 to-black/40 p-5 text-center">
+                  <div className="mx-auto text-5xl">🎁</div>
+                  <div className="mt-2 font-display text-lg font-black uppercase tracking-[0.25em] text-glow-yellow">{tr("openChest")}</div>
+                  <div className="mt-1 text-[10px] uppercase tracking-[0.2em] text-muted-foreground">{tr("resetIn")} {chestResetLabel}</div>
+                  <div className="mt-3 flex flex-wrap justify-center gap-1 text-[9px] uppercase tracking-[0.2em]">
+                    {(["common", "rare", "epic", "legendary", "mythic"] as Rarity[]).map((r) => (
+                      <span key={r} className="rounded-full px-2 py-1" style={{ color: RARITY_COLOR[r], border: `1px solid ${RARITY_COLOR[r]}55` }}>{r}</span>
+                    ))}
+                  </div>
+                  <button
+                    onClick={openChest}
+                    disabled={chestLeft <= 0 || prog.coins < CHEST_COST}
+                    className={`mt-4 w-full rounded-xl px-4 py-3 font-display text-sm font-black uppercase tracking-[0.3em] transition ${chestLeft <= 0 || prog.coins < CHEST_COST ? "bg-black/40 text-muted-foreground" : "bg-[color:var(--neon-magenta)]/20 text-glow-magenta hover:scale-[1.02]"}`}
+                  >
+                    {chestLeft <= 0 ? tr("dailyLimit") : `${tr("buy")} · ${CHEST_COST} 🪙`}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {panel === "perks" && (
+              <div>
+                <div className="mb-2 flex items-center justify-between text-xs uppercase tracking-[0.2em]">
+                  <span className="text-glow-yellow">🪙 {prog.coins}</span>
+                  <span className="text-glow-cyan">{tr("slots")} · {loadout.length}/{MAX_LOADOUT}</span>
+                </div>
+                <p className="mb-3 text-[11px] text-muted-foreground">{tr("powerupsDesc")}</p>
+                <div className="mb-4 grid grid-cols-5 gap-2">
+                  {Array.from({ length: MAX_LOADOUT }).map((_, i) => {
+                    const id = loadout[i];
+                    const pk = id ? findPerk(id) : undefined;
+                    return (
+                      <button
+                        key={i}
+                        onClick={() => id && togglePerk(id)}
+                        className="aspect-square rounded-xl border flex flex-col items-center justify-center text-lg transition hover:scale-105"
+                        style={{ borderColor: pk ? `${pk.color}88` : "rgba(255,255,255,0.12)", background: pk ? `${pk.color}18` : "rgba(0,0,0,0.3)", color: pk?.color ?? undefined }}
+                        title={pk ? tr("unequip") : tr("slotEmpty")}
+                      >
+                        <span>{pk?.icon ?? "+"}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+                <div className="space-y-2 max-h-[52vh] overflow-y-auto">
+                  {PERKS.map((pk) => {
+                    const owns = (prog.purchases ?? []).includes(perkKey(pk.id));
+                    const unlocked = perkUnlocked(pk, prog.stats ?? {});
+                    const equipped = loadout.includes(pk.id);
+                    const have = (prog.stats ?? {})[pk.req.stat] ?? 0;
+                    return (
+                      <div key={pk.id} className={`rounded-xl border p-3 ${unlocked ? "" : "opacity-60"}`} style={{ borderColor: `${pk.color}55`, background: `linear-gradient(180deg, ${pk.color}10, rgba(0,0,0,0.35))` }}>
+                        <div className="flex items-start gap-3">
+                          <div className="grid h-10 w-10 shrink-0 place-items-center rounded-lg text-lg" style={{ background: `${pk.color}20`, color: pk.color, boxShadow: `0 0 16px ${pk.color}55` }}>{pk.icon}</div>
+                          <div className="min-w-0 flex-1">
+                            <div className="text-xs font-bold uppercase tracking-[0.2em]" style={{ color: pk.color }}>{tr(pk.nameKey)}</div>
+                            <div className="mt-1 text-[11px] text-muted-foreground">{tr(pk.descKey)}</div>
+                            {!unlocked && (
+                              <div className="mt-1 text-[10px] uppercase tracking-[0.15em] text-glow-magenta">
+                                🔒 {tr("unlockCond")} · {Math.min(have, pk.req.target)}/{pk.req.target} {tr(`st${pk.req.stat.charAt(0).toUpperCase()}${pk.req.stat.slice(1)}`)}
+                              </div>
+                            )}
+                          </div>
+                          <button
+                            onClick={() => (owns ? togglePerk(pk.id) : buyPerk(pk.id))}
+                            disabled={!unlocked || (!owns && prog.coins < pk.cost)}
+                            className={`shrink-0 rounded-lg px-3 py-2 text-[10px] font-bold uppercase tracking-widest transition ${equipped ? "bg-[color:var(--neon-cyan)]/20 text-glow-cyan" : owns ? "bg-black/40 text-glow-magenta hover:scale-105" : unlocked ? "bg-black/40 text-glow-yellow hover:scale-105" : "bg-black/40 text-muted-foreground"}`}
+                          >
+                            {equipped ? tr("equipped") : owns ? tr("equip") : !unlocked ? tr("perkLocked") : `${pk.cost} 🪙`}
+                          </button>
+                        </div>
                       </div>
                     );
                   })}
