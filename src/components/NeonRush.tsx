@@ -22,6 +22,19 @@ import {
 import { useNotifications } from "@/hooks/useNotifications";
 import NeonNotifications from "@/components/NeonNotifications";
 
+/** Statistiques de carrière : `best*` prend le maximum, le reste s'accumule. */
+const bumpStats = (
+  cur: Record<string, number> | undefined,
+  delta: Record<string, number>,
+): Record<string, number> => {
+  const st: Record<string, number> = { ...(cur ?? {}) };
+  for (const [k, v] of Object.entries(delta)) {
+    if (!v) continue;
+    st[k] = k.startsWith("best") ? Math.max(st[k] ?? 0, v) : (st[k] ?? 0) + v;
+  }
+  return st;
+};
+
 /* ----------------------------- Audio Engine ----------------------------- */
 class AudioEngine {
   ctx: AudioContext | null = null;
@@ -548,6 +561,11 @@ export default function NeonRush() {
       xp: p.xp + xp,
       duoBest: Math.max(p.duoBest ?? 0, res.teamScore),
       duoRevives: (p.duoRevives ?? 0) + res.revives,
+      stats: bumpStats(p.stats, {
+        duoRuns: 1, revives: res.revives, runs: 1,
+        orbs: stateRef.current.runOrbs || 0, powers: stateRef.current.runPowers || 0,
+        bestCombo: stateRef.current.maxCombo,
+      }),
     }));
     const s = stateRef.current;
     applyRunRef.current({
@@ -637,7 +655,14 @@ export default function NeonRush() {
     const earnedXP = Math.floor((finalScore / 6) * mult);
     setProg((p) => {
       const bestByMode = { ...p.bestByMode, [finalMode]: Math.max(p.bestByMode[finalMode] || 0, finalScore) };
-      return { ...p, coins: p.coins + earnedCoins, xp: p.xp + earnedXP, bestByMode };
+      const st = stateRef.current;
+      return {
+        ...p, coins: p.coins + earnedCoins, xp: p.xp + earnedXP, bestByMode,
+        stats: bumpStats(p.stats, {
+          runs: 1, orbs: st.runOrbs || 0, powers: st.runPowers || 0,
+          bestScore: finalScore, bestCombo: finalCombo,
+        }),
+      };
     });
     setRewardEarned({ coins: earnedCoins, xp: earnedXP });
 
@@ -1144,27 +1169,71 @@ export default function NeonRush() {
     if (!prog.owned.includes(id)) return;
     setProg((p) => ({ ...p, equipped: id }));
   };
+  /** Coffres restants aujourd'hui (reset à minuit UTC). */
+  const chestDay = chestDayKey();
+  const chestUsed = prog.chestDay === chestDay ? (prog.chestUsed ?? 0) : 0;
+  const chestLeft = Math.max(0, DAILY_CHEST_LIMIT - chestUsed);
+  const chestResetLabel = (() => {
+    const ms = msUntilChestReset();
+    const h = Math.floor(ms / 3600000);
+    const m = Math.floor((ms % 3600000) / 60000);
+    return `${h}h ${String(m).padStart(2, "0")}m`;
+  })();
+
   const openChest = () => {
+    if (chestLeft <= 0) { showToast(tr("noChestLeft")); return; }
     if (prog.coins < CHEST_COST) { showToast(tr("notEnough")); return; }
     const reward = rollChestReward(prog.owned);
+    const skinDef = reward.type === "skin" ? SKINS.find((k) => k.id === reward.skin) : undefined;
     setProg((p) => {
-      let np = { ...p, coins: p.coins - CHEST_COST };
-      if (reward.type === "skin") {
-        np = { ...np, owned: [...np.owned, reward.skin] };
-        const name = SKINS.find((s) => s.id === reward.skin)?.name ?? reward.skin;
-        showToast(`✨ ${reward.rarity.toUpperCase()} — ${name}`);
-      } else {
-        np = { ...np, coins: np.coins + reward.coins };
-        showToast(`🪙 +${reward.coins} · ${reward.rarity.toUpperCase()} (déjà tout obtenu)`);
-      }
+      let np = {
+        ...p,
+        coins: p.coins - CHEST_COST,
+        chestDay,
+        chestUsed: chestUsed + 1,
+        stats: bumpStats(p.stats, { chests: 1 }),
+      };
+      if (reward.type === "skin") np = { ...np, owned: [...np.owned, reward.skin] };
+      else np = { ...np, coins: np.coins + reward.coins };
       return np;
     });
-    // Rarity-tuned audio
+    // Animation cinématique d'ouverture
+    setChestFx({
+      stage: "shake",
+      rarity: reward.rarity,
+      name: reward.type === "skin" ? (skinDef?.name ?? reward.skin) : `+${reward.coins} 🪙`,
+      colors: (skinDef?.colors as [string, string, string]) ?? ["#fff17a", "#ffb36b", "#ff8ad1"],
+    });
+    window.setTimeout(() => setChestFx((c) => (c ? { ...c, stage: "reveal" } : c)), 900);
+    window.setTimeout(() => setChestFx(null), 3200);
     if (reward.rarity === "mythic") audioRef.current.mythicSound();
     else if (reward.rarity === "legendary") audioRef.current.legendarySound();
     else audioRef.current.power();
+    vibrate(reward.rarity === "mythic" ? [30, 60, 30, 60, 40] : 20);
   };
 
+  /* ---- Power-ups permanents ---- */
+  const loadout = prog.loadout ?? [];
+  const buyPerk = (id: string) => {
+    const pk = findPerk(id); if (!pk) return;
+    if (loadout.includes(id)) return;
+    if ((prog.purchases ?? []).includes(perkKey(id))) return;
+    if (!perkUnlocked(pk, prog.stats ?? {})) { showToast(tr("perkLocked")); return; }
+    if (prog.coins < pk.cost) { showToast(tr("notEnoughCoins")); return; }
+    setProg((p) => ({ ...p, coins: p.coins - pk.cost, purchases: [...(p.purchases ?? []), perkKey(id)] }));
+    audioRef.current.power();
+    showToast(tr("perkBought"));
+  };
+  const togglePerk = (id: string) => {
+    if (!(prog.purchases ?? []).includes(perkKey(id))) return;
+    setProg((p) => {
+      const cur = p.loadout ?? [];
+      if (cur.includes(id)) return { ...p, loadout: cur.filter((x) => x !== id) };
+      if (cur.length >= MAX_LOADOUT) return p;
+      return { ...p, loadout: [...cur, id] };
+    });
+    if ((prog.loadout ?? []).length >= MAX_LOADOUT && !(prog.loadout ?? []).includes(id)) showToast(tr("slotsFull"));
+  };
 
   const claimMission = (id: string) => {
     const tpl = findTemplate(id); if (!tpl) return;
