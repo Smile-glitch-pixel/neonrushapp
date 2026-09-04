@@ -15,8 +15,25 @@ import DuoLobby from "@/components/DuoLobby";
 import { mergeProg, progToRemote } from "@/lib/prog-sync";
 import { submitScore, fetchLeaderboard, fetchMyRank } from "@/lib/leaderboard.functions";
 import { POWERS, POWER_MAP, POWER_IDS, rollPower, emptyTimers, type PowerId, type PowerTimers } from "@/lib/powerups";
+import {
+  PERKS, MAX_LOADOUT, findPerk, perkUnlocked, perkKey, buildLoadout, emptyLoadout,
+  DAILY_CHEST_LIMIT, chestDayKey, msUntilChestReset, type Loadout,
+} from "@/lib/perks";
 import { useNotifications } from "@/hooks/useNotifications";
 import NeonNotifications from "@/components/NeonNotifications";
+
+/** Statistiques de carrière : `best*` prend le maximum, le reste s'accumule. */
+const bumpStats = (
+  cur: Record<string, number> | undefined,
+  delta: Record<string, number>,
+): Record<string, number> => {
+  const st: Record<string, number> = { ...(cur ?? {}) };
+  for (const [k, v] of Object.entries(delta)) {
+    if (!v) continue;
+    st[k] = k.startsWith("best") ? Math.max(st[k] ?? 0, v) : (st[k] ?? 0) + v;
+  }
+  return st;
+};
 
 /* ----------------------------- Audio Engine ----------------------------- */
 class AudioEngine {
@@ -233,7 +250,7 @@ export default function NeonRush() {
   const [timeLeft, setTimeLeft] = useState(0);
   const [rewardEarned, setRewardEarned] = useState<{ coins: number; xp: number; skin?: SkinId } | null>(null);
   const [toast, setToast] = useState<string>("");
-  const [panel, setPanel] = useState<null | "modes" | "skins" | "pass" | "ranked" | "settings" | "leaderboard" | "missions" | "duo">(null);
+  const [panel, setPanel] = useState<null | "modes" | "skins" | "pass" | "ranked" | "settings" | "leaderboard" | "missions" | "duo" | "shop" | "perks">(null);
   const [powers, setPowers] = useState<PowerTimers>(() => emptyTimers());
   const [secondCharges, setSecondCharges] = useState(0);
   const [countdown, setCountdown] = useState(0);
@@ -259,7 +276,7 @@ export default function NeonRush() {
   const [lbLoading, setLbLoading] = useState(false);
 
   // ---- DUO COOP (2 joueurs, une équipe, un objectif commun) ----
-  const DUO_DOWN_MS = 10000;
+  const DUO_DOWN_MS = 10000 + ((prog.loadout ?? []).includes("guardian") ? 4000 : 0);
   const [duoCode, setDuoCode] = useState("");
   const [duoDownMs, setDuoDownMs] = useState(0);
   const duo = useDuo({
@@ -398,6 +415,7 @@ export default function NeonRush() {
     duration: 0,
     runOrbs: 0, runPowers: 0,
     duo: false,
+    lo: emptyLoadout() as Loadout,
   });
 
   const notifyRef = useRef(notify);
@@ -415,7 +433,9 @@ export default function NeonRush() {
     s.combo = 0; s.comboTimer = 0; s.score = 0; s.shake = 0; s.maxCombo = 0;
     s.runOrbs = 0; s.runPowers = 0;
     s.powers = emptyTimers();
-    s.secondCharges = 0; s.invuln = 0;
+    s.lo = buildLoadout(prog.loadout);
+    if (s.lo.startShield) s.powers.shield = 8000;
+    s.secondCharges = s.lo.secondWind ? 1 : 0; s.invuln = 0;
     s.q = 1; s.fpsAcc = 0; s.fpsFrames = 0;
     s.bestAtStart = prog.bestByMode[m] || 0; s.recordFired = false;
     s.over = false; s.difficulty = m === "hardcore" ? 1.5 : 1;
@@ -427,14 +447,14 @@ export default function NeonRush() {
     s.skinRarity = sk.rarity;
     s.duration = opts?.durationMs ?? (m === "blitz" ? 60000 : 0);
     setMode(m); setScore(0); setCombo(0);
-    setPowers(emptyTimers()); setSecondCharges(0); setRecordFlash(false); setReviveHold(0);
+    setPowers({ ...s.powers }); setSecondCharges(s.secondCharges); setRecordFlash(false); setReviveHold(0);
     clearNotifs();
     setTimeLeft(s.duration > 0 ? Math.ceil(s.duration / 1000) : 0);
     setGameOver(false); setRunning(true); setPanel(null); setRewardEarned(null);
     // Compte à rebours arcade (le Duo démarre sur le chrono serveur, sans délai)
     if (opts?.duo) { s.running = true; setCountdown(0); }
     else { s.running = false; setCountdown(3); }
-  }, [prog.equipped, prog.bestByMode, clearNotifs]);
+  }, [prog.equipped, prog.bestByMode, prog.loadout, clearNotifs]);
 
   // Compte à rebours 3 · 2 · 1 · GO
   useEffect(() => {
@@ -513,7 +533,7 @@ export default function NeonRush() {
     const s = stateRef.current;
     if (meState === "alive" && !s.running && !s.over && duoDoneRef.current !== duo.room?.id) {
       s.entities = s.entities.filter((e) => e.kind !== "hazard");
-      s.powers.shield = 3000; setPowers({ ...s.powers });
+      s.powers.shield = (prog.loadout ?? []).includes("guardian") ? 6000 : 3000; setPowers({ ...s.powers });
       s.running = true;
       setDuoDownMs(0);
       audioRef.current.power();
@@ -541,6 +561,11 @@ export default function NeonRush() {
       xp: p.xp + xp,
       duoBest: Math.max(p.duoBest ?? 0, res.teamScore),
       duoRevives: (p.duoRevives ?? 0) + res.revives,
+      stats: bumpStats(p.stats, {
+        duoRuns: 1, revives: res.revives, runs: 1,
+        orbs: stateRef.current.runOrbs || 0, powers: stateRef.current.runPowers || 0,
+        bestCombo: stateRef.current.maxCombo,
+      }),
     }));
     const s = stateRef.current;
     applyRunRef.current({
@@ -630,7 +655,14 @@ export default function NeonRush() {
     const earnedXP = Math.floor((finalScore / 6) * mult);
     setProg((p) => {
       const bestByMode = { ...p.bestByMode, [finalMode]: Math.max(p.bestByMode[finalMode] || 0, finalScore) };
-      return { ...p, coins: p.coins + earnedCoins, xp: p.xp + earnedXP, bestByMode };
+      const st = stateRef.current;
+      return {
+        ...p, coins: p.coins + earnedCoins, xp: p.xp + earnedXP, bestByMode,
+        stats: bumpStats(p.stats, {
+          runs: 1, orbs: st.runOrbs || 0, powers: st.runPowers || 0,
+          bestScore: finalScore, bestCombo: finalCombo,
+        }),
+      };
     });
     setRewardEarned({ coins: earnedCoins, xp: earnedXP });
 
@@ -781,6 +813,7 @@ export default function NeonRush() {
       if (s.running) {
         s.t += dt;
         s.difficulty = (s.mode === "hardcore" ? 1.5 : 1) + Math.min(2.5, s.t / 30000);
+        if (s.lo.slowStart && s.t < 15000) s.difficulty *= 0.75;
         if (s.duration > 0) {
           const left = Math.max(0, s.duration - s.t);
           setTimeLeft(Math.ceil(left / 1000));
@@ -793,7 +826,7 @@ export default function NeonRush() {
           spawn(); if (Math.random() < 0.15 * s.difficulty) spawn(); s.lastSpawn = s.t;
         }
         // Hardcore aussi a droit aux power-ups (plus rares) : ils sont indispensables au feeling
-        const powerEvery = s.mode === "hardcore" ? 13000 : 8500;
+        const powerEvery = (s.mode === "hardcore" ? 13000 : 8500) * (s.lo.powerHunter ? 0.7 : 1);
         if (s.t - s.lastPower > powerEvery) { spawnPower(); s.lastPower = s.t; }
 
         // Tight tracking for touch/mouse (input already snaps on touch); smooth for keyboard
@@ -832,7 +865,7 @@ export default function NeonRush() {
         if (s.comboTimer === 0 && s.combo > 0) s.combo = 0;
 
         const slowFactor = s.powers.slow > 0 ? 0.35 : 1;
-        const magnetR = s.powers.magnet > 0 ? 210 : 0;
+        const magnetR = s.powers.magnet > 0 ? 210 : (s.lo.magnetCore ? 90 : 0);
 
         for (let i = s.entities.length - 1; i >= 0; i--) {
           const e = s.entities[i];
@@ -856,13 +889,16 @@ export default function NeonRush() {
             e.angle = (e.angle || 0) + (e.spin || 0);
             if (e.x < -60 || e.x > s.w + 60 || e.y < -60 || e.y > s.h + 60) { s.entities.splice(i, 1); continue; }
           }
-          const rr = (e.r + s.player.r) ** 2;
+          const shrink = e.kind === "hazard" && s.lo.hazardShrink ? 0.88 : 1;
+          const rr = (e.r * shrink + s.player.r) ** 2;
           if (dist2(e, s.player) < rr) {
             if (e.kind === "orb") {
-              s.combo++; s.comboTimer = 1800;
+              s.combo++; s.comboTimer = s.lo.comboKeeper ? 2880 : 1800;
               const comboUp = s.combo > s.maxCombo;
               if (comboUp) s.maxCombo = s.combo;
-              const mul = (s.powers.x2 > 0 ? 2 : 1) * (s.powers.boost > 0 ? 1.25 : 1);
+              const lucky = s.lo.luckyOrbs && Math.random() < 0.1;
+              const mul = (s.powers.x2 > 0 ? 2 : 1) * (s.powers.boost > 0 ? 1.25 : 1)
+                * (s.lo.scoreBoost ? 1.15 : 1) * (lucky ? 2 : 1);
               const gain = Math.round((10 + s.combo * 2) * mul);
               s.score += gain; setScore(Math.floor(s.score)); setCombo(s.combo);
               audioRef.current.pickup(s.combo);
@@ -1133,27 +1169,71 @@ export default function NeonRush() {
     if (!prog.owned.includes(id)) return;
     setProg((p) => ({ ...p, equipped: id }));
   };
+  /** Coffres restants aujourd'hui (reset à minuit UTC). */
+  const chestDay = chestDayKey();
+  const chestUsed = prog.chestDay === chestDay ? (prog.chestUsed ?? 0) : 0;
+  const chestLeft = Math.max(0, DAILY_CHEST_LIMIT - chestUsed);
+  const chestResetLabel = (() => {
+    const ms = msUntilChestReset();
+    const h = Math.floor(ms / 3600000);
+    const m = Math.floor((ms % 3600000) / 60000);
+    return `${h}h ${String(m).padStart(2, "0")}m`;
+  })();
+
   const openChest = () => {
+    if (chestLeft <= 0) { showToast(tr("noChestLeft")); return; }
     if (prog.coins < CHEST_COST) { showToast(tr("notEnough")); return; }
     const reward = rollChestReward(prog.owned);
+    const skinDef = reward.type === "skin" ? SKINS.find((k) => k.id === reward.skin) : undefined;
     setProg((p) => {
-      let np = { ...p, coins: p.coins - CHEST_COST };
-      if (reward.type === "skin") {
-        np = { ...np, owned: [...np.owned, reward.skin] };
-        const name = SKINS.find((s) => s.id === reward.skin)?.name ?? reward.skin;
-        showToast(`✨ ${reward.rarity.toUpperCase()} — ${name}`);
-      } else {
-        np = { ...np, coins: np.coins + reward.coins };
-        showToast(`🪙 +${reward.coins} · ${reward.rarity.toUpperCase()} (déjà tout obtenu)`);
-      }
+      let np = {
+        ...p,
+        coins: p.coins - CHEST_COST,
+        chestDay,
+        chestUsed: chestUsed + 1,
+        stats: bumpStats(p.stats, { chests: 1 }),
+      };
+      if (reward.type === "skin") np = { ...np, owned: [...np.owned, reward.skin] };
+      else np = { ...np, coins: np.coins + reward.coins };
       return np;
     });
-    // Rarity-tuned audio
+    // Animation cinématique d'ouverture
+    setChestFx({
+      stage: "shake",
+      rarity: reward.rarity,
+      name: reward.type === "skin" ? (skinDef?.name ?? reward.skin) : `+${reward.coins} 🪙`,
+      colors: (skinDef?.colors as [string, string, string]) ?? ["#fff17a", "#ffb36b", "#ff8ad1"],
+    });
+    window.setTimeout(() => setChestFx((c) => (c ? { ...c, stage: "reveal" } : c)), 900);
+    window.setTimeout(() => setChestFx(null), 3200);
     if (reward.rarity === "mythic") audioRef.current.mythicSound();
     else if (reward.rarity === "legendary") audioRef.current.legendarySound();
     else audioRef.current.power();
+    vibrate(reward.rarity === "mythic" ? [30, 60, 30, 60, 40] : 20);
   };
 
+  /* ---- Power-ups permanents ---- */
+  const loadout = prog.loadout ?? [];
+  const buyPerk = (id: string) => {
+    const pk = findPerk(id); if (!pk) return;
+    if (loadout.includes(id)) return;
+    if ((prog.purchases ?? []).includes(perkKey(id))) return;
+    if (!perkUnlocked(pk, prog.stats ?? {})) { showToast(tr("perkLocked")); return; }
+    if (prog.coins < pk.cost) { showToast(tr("notEnoughCoins")); return; }
+    setProg((p) => ({ ...p, coins: p.coins - pk.cost, purchases: [...(p.purchases ?? []), perkKey(id)] }));
+    audioRef.current.power();
+    showToast(tr("perkBought"));
+  };
+  const togglePerk = (id: string) => {
+    if (!(prog.purchases ?? []).includes(perkKey(id))) return;
+    setProg((p) => {
+      const cur = p.loadout ?? [];
+      if (cur.includes(id)) return { ...p, loadout: cur.filter((x) => x !== id) };
+      if (cur.length >= MAX_LOADOUT) return p;
+      return { ...p, loadout: [...cur, id] };
+    });
+    if ((prog.loadout ?? []).length >= MAX_LOADOUT && !(prog.loadout ?? []).includes(id)) showToast(tr("slotsFull"));
+  };
 
   const claimMission = (id: string) => {
     const tpl = findTemplate(id); if (!tpl) return;
@@ -1375,6 +1455,8 @@ export default function NeonRush() {
             {/* Nav tabs */}
             <div className="mt-5 grid grid-cols-2 gap-2 sm:grid-cols-3 text-xs uppercase tracking-[0.2em]">
               <button onClick={() => setPanel("modes")} className="panel-neon rounded-lg py-2 text-glow-cyan hover:scale-105 transition">{tr("mode")}</button>
+              <button onClick={() => setPanel("shop")} className="panel-neon rounded-lg py-2 text-glow-yellow hover:scale-105 transition">🎁 {tr("shop")}</button>
+              <button onClick={() => setPanel("perks")} className="panel-neon rounded-lg py-2 text-glow-cyan hover:scale-105 transition">⚡ {tr("powerups")}</button>
               <button onClick={() => setPanel("skins")} className="panel-neon rounded-lg py-2 text-glow-magenta hover:scale-105 transition">{tr("skins")}</button>
               <button onClick={() => setPanel("pass")} className="panel-neon rounded-lg py-2 text-glow-yellow hover:scale-105 transition">{tr("pass")}</button>
               <button onClick={() => setPanel("missions")} className="panel-neon rounded-lg py-2 text-glow-cyan hover:scale-105 transition">{tr("missions")}</button>
@@ -1421,27 +1503,112 @@ export default function NeonRush() {
             {panel === "skins" && (
               <div>
                 <div className="mb-3 flex items-center justify-between text-xs uppercase tracking-[0.2em]">
-                  <span className="text-glow-yellow">🪙 {prog.coins}</span>
-                  <button onClick={openChest} className="panel-neon rounded-lg px-3 py-1 text-glow-magenta hover:scale-105 transition">🎁 {tr("openChest")} · {CHEST_COST}</button>
+                  <span className="text-glow-cyan">{tr("ownedCount")} · {prog.owned.length}/{SKINS.length}</span>
+                  <button onClick={() => setPanel("shop")} className="panel-neon rounded-lg px-3 py-1 text-glow-yellow hover:scale-105 transition">🎁 {tr("shop")}</button>
                 </div>
-                <div className="grid grid-cols-2 gap-2">
-                  {SKINS.map((s) => {
-                    const owned = prog.owned.includes(s.id);
-                    const eq = prog.equipped === s.id;
-                    const rc = RARITY_COLOR[s.rarity];
-                    const locked = !owned && (s.chestOnly || s.passOnly);
+                <p className="mb-3 text-[11px] text-muted-foreground">{tr("collectionDesc")}</p>
+                <div className="grid grid-cols-2 gap-2 max-h-[60vh] overflow-y-auto">
+                  {SKINS.map((sk) => {
+                    const owned = prog.owned.includes(sk.id);
+                    const eq = prog.equipped === sk.id;
+                    const rc = RARITY_COLOR[sk.rarity];
                     return (
-                      <div key={s.id} className="rounded-xl border p-3" style={{ borderColor: `${rc}55`, background: `linear-gradient(180deg, ${rc}10, rgba(0,0,0,0.35))` }}>
-                        <div className="mx-auto h-12 w-12 rounded-full" style={{ background: `radial-gradient(circle at 30% 30%, ${s.colors[0]}, ${s.colors[1]} 50%, ${s.colors[2]})`, boxShadow: `0 0 24px ${rc}` }} />
-                        <div className="mt-2 text-center text-xs font-bold uppercase tracking-widest">{s.name}</div>
-                        <div className="text-center text-[10px] uppercase tracking-[0.25em] font-bold" style={{ color: rc, textShadow: `0 0 8px ${rc}` }}>{s.rarity}</div>
+                      <div key={sk.id} className={`rounded-xl border p-3 ${owned ? "" : "opacity-45"}`} style={{ borderColor: `${rc}55`, background: `linear-gradient(180deg, ${rc}10, rgba(0,0,0,0.35))` }}>
+                        <div className="mx-auto h-12 w-12 rounded-full" style={{ background: owned ? `radial-gradient(circle at 30% 30%, ${sk.colors[0]}, ${sk.colors[1]} 50%, ${sk.colors[2]})` : "rgba(255,255,255,0.06)", boxShadow: owned ? `0 0 24px ${rc}` : "none" }} />
+                        <div className="mt-2 text-center text-xs font-bold uppercase tracking-widest">{owned ? sk.name : "???"}</div>
+                        <div className="text-center text-[10px] uppercase tracking-[0.25em] font-bold" style={{ color: rc, textShadow: `0 0 8px ${rc}` }}>{sk.rarity}</div>
                         <button
-                          onClick={() => (owned ? equipSkin(s.id) : buySkin(s.id))}
-                          disabled={eq || locked}
-                          className={`mt-2 w-full rounded-lg px-2 py-1 text-[10px] font-bold uppercase tracking-widest transition ${eq ? "bg-[color:var(--neon-cyan)]/20 text-glow-cyan" : owned ? "bg-black/40 text-glow-magenta hover:scale-105" : locked ? "bg-black/40 text-muted-foreground" : "bg-black/40 text-glow-yellow hover:scale-105"}`}
+                          onClick={() => equipSkin(sk.id)}
+                          disabled={!owned || eq}
+                          className={`mt-2 w-full rounded-lg px-2 py-1 text-[10px] font-bold uppercase tracking-widest transition ${eq ? "bg-[color:var(--neon-cyan)]/20 text-glow-cyan" : owned ? "bg-black/40 text-glow-magenta hover:scale-105" : "bg-black/40 text-muted-foreground"}`}
                         >
-                          {eq ? tr("equipped") : owned ? tr("equip") : s.passOnly ? "🏆 Pass" : s.chestOnly ? "🎁 Coffre" : `${tr("buy")} · ${s.price} 🪙`}
+                          {eq ? tr("equipped") : owned ? tr("equip") : tr("notOwnedYet")}
                         </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {panel === "shop" && (
+              <div>
+                <div className="mb-3 flex items-center justify-between text-xs uppercase tracking-[0.2em]">
+                  <span className="text-glow-yellow">🪙 {prog.coins}</span>
+                  <span className="text-glow-cyan">{tr("chestsLeft")} · {chestLeft}/{DAILY_CHEST_LIMIT}</span>
+                </div>
+                <p className="mb-4 text-[11px] text-muted-foreground">{tr("shopDesc")}</p>
+                <div className="rounded-2xl border border-[color:var(--neon-yellow)]/50 bg-gradient-to-b from-[color:var(--neon-yellow)]/10 to-black/40 p-5 text-center">
+                  <div className="mx-auto text-5xl">🎁</div>
+                  <div className="mt-2 font-display text-lg font-black uppercase tracking-[0.25em] text-glow-yellow">{tr("openChest")}</div>
+                  <div className="mt-1 text-[10px] uppercase tracking-[0.2em] text-muted-foreground">{tr("resetIn")} {chestResetLabel}</div>
+                  <div className="mt-3 flex flex-wrap justify-center gap-1 text-[9px] uppercase tracking-[0.2em]">
+                    {(["common", "rare", "epic", "legendary", "mythic"] as Rarity[]).map((r) => (
+                      <span key={r} className="rounded-full px-2 py-1" style={{ color: RARITY_COLOR[r], border: `1px solid ${RARITY_COLOR[r]}55` }}>{r}</span>
+                    ))}
+                  </div>
+                  <button
+                    onClick={openChest}
+                    disabled={chestLeft <= 0 || prog.coins < CHEST_COST}
+                    className={`mt-4 w-full rounded-xl px-4 py-3 font-display text-sm font-black uppercase tracking-[0.3em] transition ${chestLeft <= 0 || prog.coins < CHEST_COST ? "bg-black/40 text-muted-foreground" : "bg-[color:var(--neon-magenta)]/20 text-glow-magenta hover:scale-[1.02]"}`}
+                  >
+                    {chestLeft <= 0 ? tr("dailyLimit") : `${tr("buy")} · ${CHEST_COST} 🪙`}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {panel === "perks" && (
+              <div>
+                <div className="mb-2 flex items-center justify-between text-xs uppercase tracking-[0.2em]">
+                  <span className="text-glow-yellow">🪙 {prog.coins}</span>
+                  <span className="text-glow-cyan">{tr("slots")} · {loadout.length}/{MAX_LOADOUT}</span>
+                </div>
+                <p className="mb-3 text-[11px] text-muted-foreground">{tr("powerupsDesc")}</p>
+                <div className="mb-4 grid grid-cols-5 gap-2">
+                  {Array.from({ length: MAX_LOADOUT }).map((_, i) => {
+                    const id = loadout[i];
+                    const pk = id ? findPerk(id) : undefined;
+                    return (
+                      <button
+                        key={i}
+                        onClick={() => id && togglePerk(id)}
+                        className="aspect-square rounded-xl border flex flex-col items-center justify-center text-lg transition hover:scale-105"
+                        style={{ borderColor: pk ? `${pk.color}88` : "rgba(255,255,255,0.12)", background: pk ? `${pk.color}18` : "rgba(0,0,0,0.3)", color: pk?.color ?? undefined }}
+                        title={pk ? tr("unequip") : tr("slotEmpty")}
+                      >
+                        <span>{pk?.icon ?? "+"}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+                <div className="space-y-2 max-h-[52vh] overflow-y-auto">
+                  {PERKS.map((pk) => {
+                    const owns = (prog.purchases ?? []).includes(perkKey(pk.id));
+                    const unlocked = perkUnlocked(pk, prog.stats ?? {});
+                    const equipped = loadout.includes(pk.id);
+                    const have = (prog.stats ?? {})[pk.req.stat] ?? 0;
+                    return (
+                      <div key={pk.id} className={`rounded-xl border p-3 ${unlocked ? "" : "opacity-60"}`} style={{ borderColor: `${pk.color}55`, background: `linear-gradient(180deg, ${pk.color}10, rgba(0,0,0,0.35))` }}>
+                        <div className="flex items-start gap-3">
+                          <div className="grid h-10 w-10 shrink-0 place-items-center rounded-lg text-lg" style={{ background: `${pk.color}20`, color: pk.color, boxShadow: `0 0 16px ${pk.color}55` }}>{pk.icon}</div>
+                          <div className="min-w-0 flex-1">
+                            <div className="text-xs font-bold uppercase tracking-[0.2em]" style={{ color: pk.color }}>{tr(pk.nameKey)}</div>
+                            <div className="mt-1 text-[11px] text-muted-foreground">{tr(pk.descKey)}</div>
+                            {!unlocked && (
+                              <div className="mt-1 text-[10px] uppercase tracking-[0.15em] text-glow-magenta">
+                                🔒 {tr("unlockCond")} · {Math.min(have, pk.req.target)}/{pk.req.target} {tr(`st${pk.req.stat.charAt(0).toUpperCase()}${pk.req.stat.slice(1)}`)}
+                              </div>
+                            )}
+                          </div>
+                          <button
+                            onClick={() => (owns ? togglePerk(pk.id) : buyPerk(pk.id))}
+                            disabled={!unlocked || (!owns && prog.coins < pk.cost)}
+                            className={`shrink-0 rounded-lg px-3 py-2 text-[10px] font-bold uppercase tracking-widest transition ${equipped ? "bg-[color:var(--neon-cyan)]/20 text-glow-cyan" : owns ? "bg-black/40 text-glow-magenta hover:scale-105" : unlocked ? "bg-black/40 text-glow-yellow hover:scale-105" : "bg-black/40 text-muted-foreground"}`}
+                          >
+                            {equipped ? tr("equipped") : owns ? tr("equip") : !unlocked ? tr("perkLocked") : `${pk.cost} 🪙`}
+                          </button>
+                        </div>
                       </div>
                     );
                   })}
