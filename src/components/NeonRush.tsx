@@ -15,6 +15,10 @@ import DuoLobby from "@/components/DuoLobby";
 import { mergeProg, progToRemote } from "@/lib/prog-sync";
 import { submitScore, fetchLeaderboard, fetchMyRank } from "@/lib/leaderboard.functions";
 import { POWERS, POWER_MAP, POWER_IDS, rollPower, emptyTimers, type PowerId, type PowerTimers } from "@/lib/powerups";
+import {
+  PERKS, MAX_LOADOUT, findPerk, perkUnlocked, perkKey, buildLoadout, emptyLoadout,
+  DAILY_CHEST_LIMIT, chestDayKey, msUntilChestReset, type Loadout,
+} from "@/lib/perks";
 import { useNotifications } from "@/hooks/useNotifications";
 import NeonNotifications from "@/components/NeonNotifications";
 
@@ -233,7 +237,7 @@ export default function NeonRush() {
   const [timeLeft, setTimeLeft] = useState(0);
   const [rewardEarned, setRewardEarned] = useState<{ coins: number; xp: number; skin?: SkinId } | null>(null);
   const [toast, setToast] = useState<string>("");
-  const [panel, setPanel] = useState<null | "modes" | "skins" | "pass" | "ranked" | "settings" | "leaderboard" | "missions" | "duo">(null);
+  const [panel, setPanel] = useState<null | "modes" | "skins" | "pass" | "ranked" | "settings" | "leaderboard" | "missions" | "duo" | "shop" | "perks">(null);
   const [powers, setPowers] = useState<PowerTimers>(() => emptyTimers());
   const [secondCharges, setSecondCharges] = useState(0);
   const [countdown, setCountdown] = useState(0);
@@ -259,7 +263,7 @@ export default function NeonRush() {
   const [lbLoading, setLbLoading] = useState(false);
 
   // ---- DUO COOP (2 joueurs, une équipe, un objectif commun) ----
-  const DUO_DOWN_MS = 10000;
+  const DUO_DOWN_MS = 10000 + ((prog.loadout ?? []).includes("guardian") ? 4000 : 0);
   const [duoCode, setDuoCode] = useState("");
   const [duoDownMs, setDuoDownMs] = useState(0);
   const duo = useDuo({
@@ -398,6 +402,7 @@ export default function NeonRush() {
     duration: 0,
     runOrbs: 0, runPowers: 0,
     duo: false,
+    lo: emptyLoadout() as Loadout,
   });
 
   const notifyRef = useRef(notify);
@@ -415,7 +420,9 @@ export default function NeonRush() {
     s.combo = 0; s.comboTimer = 0; s.score = 0; s.shake = 0; s.maxCombo = 0;
     s.runOrbs = 0; s.runPowers = 0;
     s.powers = emptyTimers();
-    s.secondCharges = 0; s.invuln = 0;
+    s.lo = buildLoadout(prog.loadout);
+    if (s.lo.startShield) s.powers.shield = 8000;
+    s.secondCharges = s.lo.secondWind ? 1 : 0; s.invuln = 0;
     s.q = 1; s.fpsAcc = 0; s.fpsFrames = 0;
     s.bestAtStart = prog.bestByMode[m] || 0; s.recordFired = false;
     s.over = false; s.difficulty = m === "hardcore" ? 1.5 : 1;
@@ -427,14 +434,14 @@ export default function NeonRush() {
     s.skinRarity = sk.rarity;
     s.duration = opts?.durationMs ?? (m === "blitz" ? 60000 : 0);
     setMode(m); setScore(0); setCombo(0);
-    setPowers(emptyTimers()); setSecondCharges(0); setRecordFlash(false); setReviveHold(0);
+    setPowers({ ...s.powers }); setSecondCharges(s.secondCharges); setRecordFlash(false); setReviveHold(0);
     clearNotifs();
     setTimeLeft(s.duration > 0 ? Math.ceil(s.duration / 1000) : 0);
     setGameOver(false); setRunning(true); setPanel(null); setRewardEarned(null);
     // Compte à rebours arcade (le Duo démarre sur le chrono serveur, sans délai)
     if (opts?.duo) { s.running = true; setCountdown(0); }
     else { s.running = false; setCountdown(3); }
-  }, [prog.equipped, prog.bestByMode, clearNotifs]);
+  }, [prog.equipped, prog.bestByMode, prog.loadout, clearNotifs]);
 
   // Compte à rebours 3 · 2 · 1 · GO
   useEffect(() => {
@@ -513,7 +520,7 @@ export default function NeonRush() {
     const s = stateRef.current;
     if (meState === "alive" && !s.running && !s.over && duoDoneRef.current !== duo.room?.id) {
       s.entities = s.entities.filter((e) => e.kind !== "hazard");
-      s.powers.shield = 3000; setPowers({ ...s.powers });
+      s.powers.shield = (prog.loadout ?? []).includes("guardian") ? 6000 : 3000; setPowers({ ...s.powers });
       s.running = true;
       setDuoDownMs(0);
       audioRef.current.power();
@@ -781,6 +788,7 @@ export default function NeonRush() {
       if (s.running) {
         s.t += dt;
         s.difficulty = (s.mode === "hardcore" ? 1.5 : 1) + Math.min(2.5, s.t / 30000);
+        if (s.lo.slowStart && s.t < 15000) s.difficulty *= 0.75;
         if (s.duration > 0) {
           const left = Math.max(0, s.duration - s.t);
           setTimeLeft(Math.ceil(left / 1000));
@@ -793,7 +801,7 @@ export default function NeonRush() {
           spawn(); if (Math.random() < 0.15 * s.difficulty) spawn(); s.lastSpawn = s.t;
         }
         // Hardcore aussi a droit aux power-ups (plus rares) : ils sont indispensables au feeling
-        const powerEvery = s.mode === "hardcore" ? 13000 : 8500;
+        const powerEvery = (s.mode === "hardcore" ? 13000 : 8500) * (s.lo.powerHunter ? 0.7 : 1);
         if (s.t - s.lastPower > powerEvery) { spawnPower(); s.lastPower = s.t; }
 
         // Tight tracking for touch/mouse (input already snaps on touch); smooth for keyboard
@@ -832,7 +840,7 @@ export default function NeonRush() {
         if (s.comboTimer === 0 && s.combo > 0) s.combo = 0;
 
         const slowFactor = s.powers.slow > 0 ? 0.35 : 1;
-        const magnetR = s.powers.magnet > 0 ? 210 : 0;
+        const magnetR = s.powers.magnet > 0 ? 210 : (s.lo.magnetCore ? 90 : 0);
 
         for (let i = s.entities.length - 1; i >= 0; i--) {
           const e = s.entities[i];
@@ -856,13 +864,16 @@ export default function NeonRush() {
             e.angle = (e.angle || 0) + (e.spin || 0);
             if (e.x < -60 || e.x > s.w + 60 || e.y < -60 || e.y > s.h + 60) { s.entities.splice(i, 1); continue; }
           }
-          const rr = (e.r + s.player.r) ** 2;
+          const shrink = e.kind === "hazard" && s.lo.hazardShrink ? 0.88 : 1;
+          const rr = (e.r * shrink + s.player.r) ** 2;
           if (dist2(e, s.player) < rr) {
             if (e.kind === "orb") {
-              s.combo++; s.comboTimer = 1800;
+              s.combo++; s.comboTimer = s.lo.comboKeeper ? 2880 : 1800;
               const comboUp = s.combo > s.maxCombo;
               if (comboUp) s.maxCombo = s.combo;
-              const mul = (s.powers.x2 > 0 ? 2 : 1) * (s.powers.boost > 0 ? 1.25 : 1);
+              const lucky = s.lo.luckyOrbs && Math.random() < 0.1;
+              const mul = (s.powers.x2 > 0 ? 2 : 1) * (s.powers.boost > 0 ? 1.25 : 1)
+                * (s.lo.scoreBoost ? 1.15 : 1) * (lucky ? 2 : 1);
               const gain = Math.round((10 + s.combo * 2) * mul);
               s.score += gain; setScore(Math.floor(s.score)); setCombo(s.combo);
               audioRef.current.pickup(s.combo);
