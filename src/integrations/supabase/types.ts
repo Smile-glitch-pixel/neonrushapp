@@ -356,6 +356,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      display_name_available: { Args: { _name: string }; Returns: boolean }
       duo_cleanup: { Args: never; Returns: undefined }
       duo_close_coop: { Args: { _room: string }; Returns: undefined }
       duo_create_room: {
