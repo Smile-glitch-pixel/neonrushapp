@@ -346,24 +346,35 @@ export const defaultProg = (): Progression => ({
 });
 
 
-export const loadProg = (): Progression => {
+/**
+ * Portée de sauvegarde locale :
+ * - `null` = progression de l'APPAREIL (invité, personne de connecté)
+ * - `<userId>` = cache local de la progression DU COMPTE (jamais mélangé avec l'invité)
+ */
+export type ProgScope = string | null;
+const scopedKey = (scope: ProgScope) => (scope ? `${KEY}:u:${scope}` : KEY);
+
+const sanitize = (p: Partial<Progression>): Progression => {
+  const merged: Progression = { ...defaultProg(), ...p };
+  const validIds = new Set(SKINS.map((s) => s.id));
+  merged.owned = (merged.owned || []).filter((id) => validIds.has(id));
+  if (!merged.owned.includes("cyan")) merged.owned.push("cyan");
+  if (!validIds.has(merged.equipped)) merged.equipped = "cyan";
+  merged.missions = refreshMissionsIfNeeded(merged.missions);
+  return merged;
+};
+
+export const loadProg = (scope: ProgScope = null): Progression => {
   if (typeof window === "undefined") return defaultProg();
   try {
-    const raw = localStorage.getItem(KEY);
+    const raw = localStorage.getItem(scopedKey(scope));
     if (!raw) return defaultProg();
-    const p = JSON.parse(raw);
-    const merged: Progression = { ...defaultProg(), ...p };
-    // Filter out any owned/equipped id that no longer exists in the catalog
-    const validIds = new Set(SKINS.map((s) => s.id));
-    merged.owned = (merged.owned || []).filter((id) => validIds.has(id));
-    if (!merged.owned.includes("cyan")) merged.owned.push("cyan");
-    if (!validIds.has(merged.equipped)) merged.equipped = "cyan";
-    merged.missions = refreshMissionsIfNeeded(merged.missions);
-    return merged;
+    return sanitize(JSON.parse(raw));
   } catch {
     return defaultProg();
   }
 };
-export const saveProg = (p: Progression) => {
-  try { localStorage.setItem(KEY, JSON.stringify(p)); } catch { /* noop */ }
+export const saveProg = (p: Progression, scope: ProgScope = null) => {
+  try { localStorage.setItem(scopedKey(scope), JSON.stringify(p)); } catch { /* noop */ }
 };
+
