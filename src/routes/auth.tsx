@@ -1,7 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { lovable } from "@/integrations/lovable/index";
+
 
 export const Route = createFileRoute("/auth")({
   head: () => ({
@@ -35,12 +35,18 @@ function AuthPage() {
   const google = async () => {
     setErr(null); setBusy(true);
     try {
-      const r = await lovable.auth.signInWithOAuth("google", { redirect_uri: window.location.origin });
-      if (r.error) setErr(r.error.message || "Erreur Google");
+      // Utilise la configuration Google du projet Supabase (Client ID/Secret propres).
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: { redirectTo: window.location.origin },
+      });
+      if (error) throw error;
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Erreur Google");
-    } finally { setBusy(false); }
+      setBusy(false);
+    }
   };
+
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
