@@ -1474,12 +1474,44 @@ export default function NeonRush() {
         </div>
       )}
 
+      {/* CHEST OPENING CINEMATIC */}
+      {chestFx && (
+        <div className="absolute inset-0 z-40 flex items-center justify-center bg-black/70 backdrop-blur-sm">
+          <div className="text-center">
+            <div
+              className={chestFx.stage === "shake" ? "chest-shake text-7xl" : "chest-reveal text-7xl"}
+              style={{ filter: `drop-shadow(0 0 30px ${RARITY_COLOR[chestFx.rarity]})` }}
+            >
+              {chestFx.stage === "shake" ? "🎁" : "✨"}
+            </div>
+            {chestFx.stage === "reveal" && (
+              <div className="mt-5 animate-fade-in">
+                <div
+                  className="mx-auto h-20 w-20 rounded-full"
+                  style={{
+                    background: `radial-gradient(circle at 30% 30%, ${chestFx.colors[0]}, ${chestFx.colors[1]} 50%, ${chestFx.colors[2]})`,
+                    boxShadow: `0 0 60px ${RARITY_COLOR[chestFx.rarity]}`,
+                  }}
+                />
+                <div
+                  className="mt-4 font-display text-xs font-black uppercase tracking-[0.4em]"
+                  style={{ color: RARITY_COLOR[chestFx.rarity], textShadow: `0 0 14px ${RARITY_COLOR[chestFx.rarity]}` }}
+                >
+                  {chestFx.rarity}
+                </div>
+                <div className="mt-1 font-display text-2xl font-black text-glow-cyan">{chestFx.name}</div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* SUB-PANELS */}
       {!running && panel && (
         <div className="absolute inset-0 z-20 flex items-center justify-center p-4 overflow-y-auto">
           <div className="panel-neon w-full max-w-lg rounded-2xl p-6 animate-fade-in my-auto">
             <div className="flex items-center justify-between mb-4">
-              <h2 className="font-display text-2xl font-black text-glow-cyan uppercase tracking-widest">{tr(panel === "modes" ? "mode" : panel)}</h2>
+              <h2 className="font-display text-2xl font-black text-glow-cyan uppercase tracking-widest">{tr(panel === "modes" ? "mode" : panel === "perks" ? "powerups" : panel)}</h2>
               <button onClick={() => setPanel(null)} className="panel-neon rounded-lg px-3 py-1 text-xs uppercase tracking-widest text-glow-magenta">{tr("back")}</button>
             </div>
 
