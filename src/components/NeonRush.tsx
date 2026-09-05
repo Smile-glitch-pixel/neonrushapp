@@ -291,14 +291,24 @@ export default function NeonRush() {
 
 
 
+  // Progression : portée = APPAREIL (invité) quand personne n'est connecté, COMPTE sinon.
+  const scope = user?.id ?? null;
+  const [progEpoch, setProgEpoch] = useState(0);
+  const loadedRef = useRef<{ scope: string | null; epoch: number }>({ scope: null, epoch: 0 });
+
   useEffect(() => {
     const l = (localStorage.getItem(LANG_KEY) as Lang) || (navigator.language.startsWith("es") ? "es" : navigator.language.startsWith("fr") ? "fr" : "en");
     setLang(l);
-    setProg(loadProg());
+    setProg(loadProg(null));
     setHydrated(true);
   }, []);
   useEffect(() => { try { localStorage.setItem(LANG_KEY, lang); } catch { /* noop */ } }, [lang]);
-  useEffect(() => { if (hydrated) saveProg(prog); }, [prog, hydrated]);
+  useEffect(() => {
+    if (!hydrated) return;
+    if (loadedRef.current.scope !== scope || loadedRef.current.epoch !== progEpoch) return;
+    saveProg(prog, scope);
+  }, [prog, hydrated, scope, progEpoch]);
+
 
   // Refresh missions when day/week rolls over (checked every minute)
   useEffect(() => {
