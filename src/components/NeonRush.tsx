@@ -365,33 +365,43 @@ export default function NeonRush() {
     return () => { sub.subscription.unsubscribe(); };
   }, []);
 
-  // On login: pull remote → merge → push merged back
+  // Changement de compte / déconnexion : on bascule IMMÉDIATEMENT sur la bonne progression
+  // (cache local du compte, ou progression de l'appareil quand personne n'est connecté).
   useEffect(() => {
-    if (!user || !hydrated) return;
+    if (!hydrated) return;
+    if (loadedRef.current.scope === scope) return;
+    const local = loadProg(scope);
+    loadedRef.current = { scope, epoch: progEpoch + 1 };
+    setProg(local);
+    setProgEpoch((e) => e + 1);
+    if (pushTimer.current) { window.clearTimeout(pushTimer.current); pushTimer.current = null; }
+    if (!scope) return;
     let cancel = false;
     (async () => {
       try {
         const remote = await pullFn();
         if (cancel) return;
-        setProg((local) => {
-          const merged = mergeProg(local, remote as never);
+        setProg((cur) => {
+          const merged = mergeProg(cur, remote as never);
           pushFn({ data: progToRemote(merged) }).catch(() => { /* noop */ });
           return merged;
         });
       } catch { /* noop */ }
     })();
     return () => { cancel = true; };
-  }, [user, hydrated, pullFn, pushFn]);
+  }, [scope, hydrated, progEpoch, pullFn, pushFn]);
 
   // Debounced push on prog changes when signed-in
   useEffect(() => {
     if (!user || !hydrated) return;
+    if (loadedRef.current.scope !== scope || loadedRef.current.epoch !== progEpoch) return;
     if (pushTimer.current) window.clearTimeout(pushTimer.current);
     pushTimer.current = window.setTimeout(() => {
       pushFn({ data: progToRemote(prog) }).catch(() => { /* noop */ });
     }, 900);
     return () => { if (pushTimer.current) window.clearTimeout(pushTimer.current); };
-  }, [prog, user, hydrated, pushFn]);
+  }, [prog, user, hydrated, scope, progEpoch, pushFn]);
+
 
   const signOut = async () => { await supabase.auth.signOut(); };
 
