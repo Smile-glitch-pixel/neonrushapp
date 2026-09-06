@@ -403,7 +403,44 @@ export default function NeonRush() {
   }, [prog, user, hydrated, scope, progEpoch, pushFn]);
 
 
+  // ---- PSEUDO OBLIGATOIRE (compte) ----
+  const getProfileFn = useServerFn(getMyProfile);
+  const setNameFn = useServerFn(setDisplayName);
+  const [profileName, setProfileName] = useState<string | null>(null);
+  const [needNick, setNeedNick] = useState(false);
+
+  useEffect(() => {
+    if (!user) { setProfileName(null); setNeedNick(false); return; }
+    let cancel = false;
+    (async () => {
+      try {
+        const p = await getProfileFn();
+        if (cancel) return;
+        const name = p?.display_name ?? null;
+        const emailLocal = user.email?.split("@")[0] ?? null;
+        // Un nom auto-généré depuis l'email n'est PAS un pseudo choisi.
+        const chosen = name && name !== emailLocal ? name : null;
+        setProfileName(chosen);
+        setNeedNick(!chosen);
+        if (chosen) setProg((pr) => (pr.displayName === chosen ? pr : { ...pr, displayName: chosen }));
+      } catch { /* noop */ }
+    })();
+    return () => { cancel = true; };
+  }, [user, getProfileFn]);
+
+  const saveNickname = useCallback(async (raw: string) => {
+    const r = await setNameFn({ data: { name: raw.trim() } });
+    if (r.ok) {
+      setProfileName(r.name);
+      setNeedNick(false);
+      setProg((p) => ({ ...p, displayName: r.name }));
+    }
+    return r;
+  }, [setNameFn]);
+
   const signOut = async () => { await supabase.auth.signOut(); };
+
+
 
 
   const tr = useCallback((k: string) => t(lang, k), [lang]);
