@@ -638,53 +638,108 @@ export default function NeonRush() {
 
 
 
-  // Input — Pointer Events for zero-latency touch/mouse tracking
+  // Input — joystick virtuel (apparaît là où on appuie) + clavier WASD/flèches en parallèle
+  const JOY_R = 58; // rayon du joystick en px écran
+  const joyRef = useRef<{ id: number; ox: number; oy: number; dx: number; dy: number } | null>(null);
+  const [joy, setJoy] = useState<{ ox: number; oy: number; dx: number; dy: number } | null>(null);
+
   useEffect(() => {
     const canvas = canvasRef.current!;
     const s = stateRef.current;
-    const setFromClient = (clientX: number, clientY: number, snap: boolean) => {
+    const dragRef = { id: -1 };
+    const toGame = (clientX: number, clientY: number) => {
       const rect = canvas.getBoundingClientRect();
-      const x = ((clientX - rect.left) / rect.width) * s.w;
-      const y = ((clientY - rect.top) / rect.height) * s.h;
-      s.player.tx = x; s.player.ty = y;
-      if (snap) { s.player.x = x; s.player.y = y; }
+      return {
+        x: ((clientX - rect.left) / rect.width) * s.w,
+        y: ((clientY - rect.top) / rect.height) * s.h,
+        rect,
+      };
     };
     const onPointerDown = (e: PointerEvent) => {
-      setFromClient(e.clientX, e.clientY, true);
+      const { x, y, rect } = toGame(e.clientX, e.clientY);
+      const onBall = Math.hypot(x - s.player.x, y - s.player.y) <= s.player.r + 20;
       try { canvas.setPointerCapture(e.pointerId); } catch { /* noop */ }
+      if (onBall) {
+        // Appui directement sur la boule : glissement direct, pas de joystick
+        dragRef.id = e.pointerId;
+        s.player.tx = x; s.player.ty = y;
+        return;
+      }
+      const j = { id: e.pointerId, ox: e.clientX - rect.left, oy: e.clientY - rect.top, dx: 0, dy: 0 };
+      joyRef.current = j;
+      setJoy({ ox: j.ox, oy: j.oy, dx: 0, dy: 0 });
+      if (e.pointerType !== "mouse") e.preventDefault();
     };
     const onPointerMove = (e: PointerEvent) => {
-      // Coalesce for smoothest tracking
       const events = (e.getCoalescedEvents?.() as PointerEvent[] | undefined) ?? [e];
       const last = events[events.length - 1];
-      setFromClient(last.clientX, last.clientY, e.pointerType !== "mouse");
+      if (dragRef.id === e.pointerId) {
+        const { x, y } = toGame(last.clientX, last.clientY);
+        s.player.tx = x; s.player.ty = y;
+        if (e.pointerType !== "mouse") { s.player.x = x; s.player.y = y; e.preventDefault(); }
+        return;
+      }
+      const j = joyRef.current;
+      if (!j || j.id !== e.pointerId) return;
+      const rect = canvas.getBoundingClientRect();
+      let dx = last.clientX - rect.left - j.ox;
+      let dy = last.clientY - rect.top - j.oy;
+      const d = Math.hypot(dx, dy);
+      if (d > JOY_R) { dx = (dx / d) * JOY_R; dy = (dy / d) * JOY_R; }
+      j.dx = dx; j.dy = dy;
+      setJoy({ ox: j.ox, oy: j.oy, dx, dy });
       if (e.pointerType !== "mouse") e.preventDefault();
+    };
+    const onPointerUp = (e: PointerEvent) => {
+      if (dragRef.id === e.pointerId) dragRef.id = -1;
+      if (joyRef.current?.id === e.pointerId) { joyRef.current = null; setJoy(null); }
+      try { canvas.releasePointerCapture(e.pointerId); } catch { /* noop */ }
     };
     const keys: Record<string, boolean> = {};
     const kd = (e: KeyboardEvent) => { keys[e.key.toLowerCase()] = true; };
     const ku = (e: KeyboardEvent) => { keys[e.key.toLowerCase()] = false; };
     let raf = 0;
-    const kbLoop = () => {
+    const moveLoop = () => {
       const speed = 8;
       if (keys["arrowleft"] || keys["a"]) s.player.tx -= speed;
       if (keys["arrowright"] || keys["d"]) s.player.tx += speed;
       if (keys["arrowup"] || keys["w"]) s.player.ty -= speed;
       if (keys["arrowdown"] || keys["s"]) s.player.ty += speed;
-      raf = requestAnimationFrame(kbLoop);
+      const j = joyRef.current;
+      if (j) {
+        const mag = Math.min(1, Math.hypot(j.dx, j.dy) / JOY_R);
+        if (mag > 0.08) {
+          const nx = j.dx / (Math.hypot(j.dx, j.dy) || 1);
+          const ny = j.dy / (Math.hypot(j.dx, j.dy) || 1);
+          const v = 11 * mag;
+          s.player.tx += nx * v;
+          s.player.ty += ny * v;
+        }
+      }
+      if (s.w && s.h) {
+        s.player.tx = Math.max(s.player.r, Math.min(s.w - s.player.r, s.player.tx));
+        s.player.ty = Math.max(s.player.r, Math.min(s.h - s.player.r, s.player.ty));
+      }
+      raf = requestAnimationFrame(moveLoop);
     };
-    kbLoop();
+    moveLoop();
     canvas.addEventListener("pointerdown", onPointerDown);
     canvas.addEventListener("pointermove", onPointerMove, { passive: false });
+    canvas.addEventListener("pointerup", onPointerUp);
+    canvas.addEventListener("pointercancel", onPointerUp);
     window.addEventListener("keydown", kd);
     window.addEventListener("keyup", ku);
     return () => {
       cancelAnimationFrame(raf);
       canvas.removeEventListener("pointerdown", onPointerDown);
       canvas.removeEventListener("pointermove", onPointerMove);
+      canvas.removeEventListener("pointerup", onPointerUp);
+      canvas.removeEventListener("pointercancel", onPointerUp);
       window.removeEventListener("keydown", kd);
       window.removeEventListener("keyup", ku);
     };
   }, []);
+
 
   // Resize
   useEffect(() => {
