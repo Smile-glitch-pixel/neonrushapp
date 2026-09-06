@@ -14,6 +14,7 @@ import { useDuo } from "@/hooks/useDuo";
 import DuoLobby from "@/components/DuoLobby";
 import { mergeProg, progToRemote } from "@/lib/prog-sync";
 import { submitScore, fetchLeaderboard, fetchMyRank } from "@/lib/leaderboard.functions";
+import { getMyProfile, setDisplayName, NAME_RE } from "@/lib/profile.functions";
 import { POWERS, POWER_MAP, POWER_IDS, rollPower, emptyTimers, type PowerId, type PowerTimers } from "@/lib/powerups";
 import {
   PERKS, MAX_LOADOUT, findPerk, perkUnlocked, perkKey, buildLoadout, emptyLoadout,
@@ -21,6 +22,7 @@ import {
 } from "@/lib/perks";
 import { useNotifications } from "@/hooks/useNotifications";
 import NeonNotifications from "@/components/NeonNotifications";
+import NicknameGate from "@/components/NicknameGate";
 
 /** Statistiques de carrière : `best*` prend le maximum, le reste s'accumule. */
 const bumpStats = (
@@ -281,7 +283,7 @@ export default function NeonRush() {
   const [duoDownMs, setDuoDownMs] = useState(0);
   const duo = useDuo({
     userId: user?.id ?? null,
-    displayName: prog.displayName ?? user?.email?.split("@")[0] ?? null,
+    displayName: prog.displayName ?? null,
     equippedSkin: prog.equipped,
   });
   const duoEndRef = useRef<(score: number) => void>(() => { /* set below */ });
@@ -403,7 +405,44 @@ export default function NeonRush() {
   }, [prog, user, hydrated, scope, progEpoch, pushFn]);
 
 
+  // ---- PSEUDO OBLIGATOIRE (compte) ----
+  const getProfileFn = useServerFn(getMyProfile);
+  const setNameFn = useServerFn(setDisplayName);
+  const [profileName, setProfileName] = useState<string | null>(null);
+  const [needNick, setNeedNick] = useState(false);
+
+  useEffect(() => {
+    if (!user) { setProfileName(null); setNeedNick(false); return; }
+    let cancel = false;
+    (async () => {
+      try {
+        const p = await getProfileFn();
+        if (cancel) return;
+        const name = p?.display_name ?? null;
+        const emailLocal = user.email?.split("@")[0] ?? null;
+        // Un nom auto-généré depuis l'email n'est PAS un pseudo choisi.
+        const chosen = name && name !== emailLocal ? name : null;
+        setProfileName(chosen);
+        setNeedNick(!chosen);
+        if (chosen) setProg((pr) => (pr.displayName === chosen ? pr : { ...pr, displayName: chosen }));
+      } catch { /* noop */ }
+    })();
+    return () => { cancel = true; };
+  }, [user, getProfileFn]);
+
+  const saveNickname = useCallback(async (raw: string) => {
+    const r = await setNameFn({ data: { name: raw.trim() } });
+    if (r.ok) {
+      setProfileName(r.name);
+      setNeedNick(false);
+      setProg((p) => ({ ...p, displayName: r.name }));
+    }
+    return r;
+  }, [setNameFn]);
+
   const signOut = async () => { await supabase.auth.signOut(); };
+
+
 
 
   const tr = useCallback((k: string) => t(lang, k), [lang]);
@@ -600,53 +639,108 @@ export default function NeonRush() {
 
 
 
-  // Input — Pointer Events for zero-latency touch/mouse tracking
+  // Input — joystick virtuel (apparaît là où on appuie) + clavier WASD/flèches en parallèle
+  const JOY_R = 58; // rayon du joystick en px écran
+  const joyRef = useRef<{ id: number; ox: number; oy: number; dx: number; dy: number } | null>(null);
+  const [joy, setJoy] = useState<{ ox: number; oy: number; dx: number; dy: number } | null>(null);
+
   useEffect(() => {
     const canvas = canvasRef.current!;
     const s = stateRef.current;
-    const setFromClient = (clientX: number, clientY: number, snap: boolean) => {
+    const dragRef = { id: -1 };
+    const toGame = (clientX: number, clientY: number) => {
       const rect = canvas.getBoundingClientRect();
-      const x = ((clientX - rect.left) / rect.width) * s.w;
-      const y = ((clientY - rect.top) / rect.height) * s.h;
-      s.player.tx = x; s.player.ty = y;
-      if (snap) { s.player.x = x; s.player.y = y; }
+      return {
+        x: ((clientX - rect.left) / rect.width) * s.w,
+        y: ((clientY - rect.top) / rect.height) * s.h,
+        rect,
+      };
     };
     const onPointerDown = (e: PointerEvent) => {
-      setFromClient(e.clientX, e.clientY, true);
+      const { x, y, rect } = toGame(e.clientX, e.clientY);
+      const onBall = Math.hypot(x - s.player.x, y - s.player.y) <= s.player.r + 20;
       try { canvas.setPointerCapture(e.pointerId); } catch { /* noop */ }
+      if (onBall) {
+        // Appui directement sur la boule : glissement direct, pas de joystick
+        dragRef.id = e.pointerId;
+        s.player.tx = x; s.player.ty = y;
+        return;
+      }
+      const j = { id: e.pointerId, ox: e.clientX - rect.left, oy: e.clientY - rect.top, dx: 0, dy: 0 };
+      joyRef.current = j;
+      setJoy({ ox: j.ox, oy: j.oy, dx: 0, dy: 0 });
+      if (e.pointerType !== "mouse") e.preventDefault();
     };
     const onPointerMove = (e: PointerEvent) => {
-      // Coalesce for smoothest tracking
       const events = (e.getCoalescedEvents?.() as PointerEvent[] | undefined) ?? [e];
       const last = events[events.length - 1];
-      setFromClient(last.clientX, last.clientY, e.pointerType !== "mouse");
+      if (dragRef.id === e.pointerId) {
+        const { x, y } = toGame(last.clientX, last.clientY);
+        s.player.tx = x; s.player.ty = y;
+        if (e.pointerType !== "mouse") { s.player.x = x; s.player.y = y; e.preventDefault(); }
+        return;
+      }
+      const j = joyRef.current;
+      if (!j || j.id !== e.pointerId) return;
+      const rect = canvas.getBoundingClientRect();
+      let dx = last.clientX - rect.left - j.ox;
+      let dy = last.clientY - rect.top - j.oy;
+      const d = Math.hypot(dx, dy);
+      if (d > JOY_R) { dx = (dx / d) * JOY_R; dy = (dy / d) * JOY_R; }
+      j.dx = dx; j.dy = dy;
+      setJoy({ ox: j.ox, oy: j.oy, dx, dy });
       if (e.pointerType !== "mouse") e.preventDefault();
+    };
+    const onPointerUp = (e: PointerEvent) => {
+      if (dragRef.id === e.pointerId) dragRef.id = -1;
+      if (joyRef.current?.id === e.pointerId) { joyRef.current = null; setJoy(null); }
+      try { canvas.releasePointerCapture(e.pointerId); } catch { /* noop */ }
     };
     const keys: Record<string, boolean> = {};
     const kd = (e: KeyboardEvent) => { keys[e.key.toLowerCase()] = true; };
     const ku = (e: KeyboardEvent) => { keys[e.key.toLowerCase()] = false; };
     let raf = 0;
-    const kbLoop = () => {
+    const moveLoop = () => {
       const speed = 8;
       if (keys["arrowleft"] || keys["a"]) s.player.tx -= speed;
       if (keys["arrowright"] || keys["d"]) s.player.tx += speed;
       if (keys["arrowup"] || keys["w"]) s.player.ty -= speed;
       if (keys["arrowdown"] || keys["s"]) s.player.ty += speed;
-      raf = requestAnimationFrame(kbLoop);
+      const j = joyRef.current;
+      if (j) {
+        const mag = Math.min(1, Math.hypot(j.dx, j.dy) / JOY_R);
+        if (mag > 0.08) {
+          const nx = j.dx / (Math.hypot(j.dx, j.dy) || 1);
+          const ny = j.dy / (Math.hypot(j.dx, j.dy) || 1);
+          const v = 11 * mag;
+          s.player.tx += nx * v;
+          s.player.ty += ny * v;
+        }
+      }
+      if (s.w && s.h) {
+        s.player.tx = Math.max(s.player.r, Math.min(s.w - s.player.r, s.player.tx));
+        s.player.ty = Math.max(s.player.r, Math.min(s.h - s.player.r, s.player.ty));
+      }
+      raf = requestAnimationFrame(moveLoop);
     };
-    kbLoop();
+    moveLoop();
     canvas.addEventListener("pointerdown", onPointerDown);
     canvas.addEventListener("pointermove", onPointerMove, { passive: false });
+    canvas.addEventListener("pointerup", onPointerUp);
+    canvas.addEventListener("pointercancel", onPointerUp);
     window.addEventListener("keydown", kd);
     window.addEventListener("keyup", ku);
     return () => {
       cancelAnimationFrame(raf);
       canvas.removeEventListener("pointerdown", onPointerDown);
       canvas.removeEventListener("pointermove", onPointerMove);
+      canvas.removeEventListener("pointerup", onPointerUp);
+      canvas.removeEventListener("pointercancel", onPointerUp);
       window.removeEventListener("keydown", kd);
       window.removeEventListener("keyup", ku);
     };
   }, []);
+
 
   // Resize
   useEffect(() => {
@@ -704,7 +798,7 @@ export default function NeonRush() {
       submitScoreFn({ data: {
         mode: finalMode,
         score: finalScore,
-        display_name: prog.displayName ?? user.email?.split("@")[0] ?? null,
+        display_name: prog.displayName ?? null,
         equipped_skin: prog.equipped,
       } }).catch(() => { /* noop */ });
     }
@@ -1305,7 +1399,32 @@ export default function NeonRush() {
   return (
     <main className="scanlines relative h-screen w-screen overflow-hidden">
       <canvas ref={canvasRef} className="absolute inset-0 h-full w-full" style={{ touchAction: "none" }} />
+      {joy && (
+        <div className="pointer-events-none absolute z-30" style={{ left: joy.ox - JOY_R, top: joy.oy - JOY_R, width: JOY_R * 2, height: JOY_R * 2 }}>
+          <div
+            className="absolute inset-0 rounded-full border-2"
+            style={{
+              borderColor: "color-mix(in srgb, var(--neon-cyan) 70%, transparent)",
+              background: "radial-gradient(circle, rgba(0,0,0,0.45), rgba(0,0,0,0.15))",
+              boxShadow: "0 0 24px color-mix(in srgb, var(--neon-cyan) 45%, transparent)",
+            }}
+          />
+          <div
+            className="absolute rounded-full"
+            style={{
+              width: 46, height: 46,
+              left: JOY_R - 23 + joy.dx, top: JOY_R - 23 + joy.dy,
+              background: "radial-gradient(circle at 35% 35%, var(--neon-cyan), var(--neon-magenta))",
+              boxShadow: "0 0 22px color-mix(in srgb, var(--neon-magenta) 70%, transparent)",
+            }}
+          />
+        </div>
+      )}
       <div className="scanlines-overlay" />
+      {needNick && (
+        <NicknameGate onSave={saveNickname} tr={tr} onSignOut={signOut} />
+      )}
+
       {recordFlash && <div className="pointer-events-none absolute inset-0 z-40 animate-[hud-flash_0.9s_ease-out]" />}
       <NeonNotifications list={notifs} onDismiss={dismissNotif} />
       {secondCharges > 0 && (
@@ -1431,7 +1550,7 @@ export default function NeonRush() {
             <div className="mt-3 flex items-center justify-center gap-2 text-[10px] uppercase tracking-[0.2em]">
               {user ? (
                 <>
-                  <span className="panel-neon rounded-full px-3 py-1 text-glow-cyan truncate max-w-[220px]">☁ {user.email ?? "Compte"}</span>
+                  <span className="panel-neon rounded-full px-3 py-1 text-glow-cyan truncate max-w-[220px]">☁ {prog.displayName ?? user.email ?? "Compte"}</span>
                   <button onClick={signOut} className="panel-neon rounded-full px-3 py-1 text-glow-magenta hover:scale-105 transition">
                     {tr("signOut")}
                   </button>
