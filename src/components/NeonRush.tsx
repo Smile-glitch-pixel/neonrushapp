@@ -1550,7 +1550,7 @@ export default function NeonRush() {
             <div className="mt-3 flex items-center justify-center gap-2 text-[10px] uppercase tracking-[0.2em]">
               {user ? (
                 <>
-                  <span className="panel-neon rounded-full px-3 py-1 text-glow-cyan truncate max-w-[220px]">☁ {user.email ?? "Compte"}</span>
+                  <span className="panel-neon rounded-full px-3 py-1 text-glow-cyan truncate max-w-[220px]">☁ {prog.displayName ?? user.email ?? "Compte"}</span>
                   <button onClick={signOut} className="panel-neon rounded-full px-3 py-1 text-glow-magenta hover:scale-105 transition">
                     {tr("signOut")}
                   </button>
