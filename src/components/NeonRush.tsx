@@ -22,6 +22,7 @@ import {
 } from "@/lib/perks";
 import { useNotifications } from "@/hooks/useNotifications";
 import NeonNotifications from "@/components/NeonNotifications";
+import NicknameGate from "@/components/NicknameGate";
 
 /** Statistiques de carrière : `best*` prend le maximum, le reste s'accumule. */
 const bumpStats = (
