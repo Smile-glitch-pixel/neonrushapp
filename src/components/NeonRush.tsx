@@ -1398,7 +1398,32 @@ export default function NeonRush() {
   return (
     <main className="scanlines relative h-screen w-screen overflow-hidden">
       <canvas ref={canvasRef} className="absolute inset-0 h-full w-full" style={{ touchAction: "none" }} />
+      {joy && (
+        <div className="pointer-events-none absolute z-30" style={{ left: joy.ox - JOY_R, top: joy.oy - JOY_R, width: JOY_R * 2, height: JOY_R * 2 }}>
+          <div
+            className="absolute inset-0 rounded-full border-2"
+            style={{
+              borderColor: "color-mix(in srgb, var(--neon-cyan) 70%, transparent)",
+              background: "radial-gradient(circle, rgba(0,0,0,0.45), rgba(0,0,0,0.15))",
+              boxShadow: "0 0 24px color-mix(in srgb, var(--neon-cyan) 45%, transparent)",
+            }}
+          />
+          <div
+            className="absolute rounded-full"
+            style={{
+              width: 46, height: 46,
+              left: JOY_R - 23 + joy.dx, top: JOY_R - 23 + joy.dy,
+              background: "radial-gradient(circle at 35% 35%, var(--neon-cyan), var(--neon-magenta))",
+              boxShadow: "0 0 22px color-mix(in srgb, var(--neon-magenta) 70%, transparent)",
+            }}
+          />
+        </div>
+      )}
       <div className="scanlines-overlay" />
+      {needNick && (
+        <NicknameGate onSave={saveNickname} tr={tr} onSignOut={signOut} />
+      )}
+
       {recordFlash && <div className="pointer-events-none absolute inset-0 z-40 animate-[hud-flash_0.9s_ease-out]" />}
       <NeonNotifications list={notifs} onDismiss={dismissNotif} />
       {secondCharges > 0 && (
