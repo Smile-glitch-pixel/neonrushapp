@@ -14,6 +14,7 @@ import { useDuo } from "@/hooks/useDuo";
 import DuoLobby from "@/components/DuoLobby";
 import { mergeProg, progToRemote } from "@/lib/prog-sync";
 import { submitScore, fetchLeaderboard, fetchMyRank } from "@/lib/leaderboard.functions";
+import { getMyProfile, setDisplayName, NAME_RE } from "@/lib/profile.functions";
 import { POWERS, POWER_MAP, POWER_IDS, rollPower, emptyTimers, type PowerId, type PowerTimers } from "@/lib/powerups";
 import {
   PERKS, MAX_LOADOUT, findPerk, perkUnlocked, perkKey, buildLoadout, emptyLoadout,
@@ -281,7 +282,7 @@ export default function NeonRush() {
   const [duoDownMs, setDuoDownMs] = useState(0);
   const duo = useDuo({
     userId: user?.id ?? null,
-    displayName: prog.displayName ?? user?.email?.split("@")[0] ?? null,
+    displayName: prog.displayName ?? null,
     equippedSkin: prog.equipped,
   });
   const duoEndRef = useRef<(score: number) => void>(() => { /* set below */ });
@@ -741,7 +742,7 @@ export default function NeonRush() {
       submitScoreFn({ data: {
         mode: finalMode,
         score: finalScore,
-        display_name: prog.displayName ?? user.email?.split("@")[0] ?? null,
+        display_name: prog.displayName ?? null,
         equipped_skin: prog.equipped,
       } }).catch(() => { /* noop */ });
     }
