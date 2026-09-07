@@ -5,7 +5,7 @@ import { LANGS, type Lang, t } from "@/lib/i18n";
 import {
   MODES, SKINS, PASS_TIERS, PASS_XP_PER_TIER, PASS_REWARDS, REWARD_MULT, rankFor,
   loadProg, saveProg, defaultProg, refreshMissionsIfNeeded, findTemplate,
-  RARITY_FX, RARITY_COLOR, rollChestReward, CHEST_COST,
+  RARITY_FX, RARITY_COLOR, rollChestReward, CHEST_COST, RANKS,
   type GameMode, type Progression, type SkinId, type MissionStat, type Rarity,
 } from "@/lib/neon-progression";
 import { supabase } from "@/integrations/supabase/client";
@@ -13,7 +13,7 @@ import { pullPlayerState, pushPlayerState } from "@/lib/player-sync.functions";
 import { useDuo } from "@/hooks/useDuo";
 import DuoLobby from "@/components/DuoLobby";
 import { mergeProg, progToRemote } from "@/lib/prog-sync";
-import { submitScore, fetchLeaderboard, fetchMyRank } from "@/lib/leaderboard.functions";
+import { submitScore, fetchLeaderboard, fetchMyRank, fetchMyBests } from "@/lib/leaderboard.functions";
 import { getMyProfile, setDisplayName, NAME_RE } from "@/lib/profile.functions";
 import { POWERS, POWER_MAP, POWER_IDS, rollPower, emptyTimers, type PowerId, type PowerTimers } from "@/lib/powerups";
 import {
@@ -267,6 +267,7 @@ export default function NeonRush() {
   const submitScoreFn = useServerFn(submitScore);
   const fetchLbFn = useServerFn(fetchLeaderboard);
   const fetchRankFn = useServerFn(fetchMyRank);
+  const fetchMyBestsFn = useServerFn(fetchMyBests);
   const pushTimer = useRef<number | null>(null);
 
 
@@ -450,7 +451,9 @@ export default function NeonRush() {
   const equippedSkin = SKINS.find((s) => s.id === prog.equipped) || SKINS[0];
   const equippedFx = RARITY_FX[equippedSkin.rarity];
   const best = prog.bestByMode[mode] || 0;
-  const rank = rankFor(Math.max(...Object.values(prog.bestByMode)));
+  /** Meilleur score toutes catégories : identique à celui du classement mondial. */
+  const globalBest = Math.max(0, ...MODES.map((m) => prog.bestByMode[m.id] || 0));
+  const rank = rankFor(globalBest);
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(""), 2200); };
 
@@ -1390,6 +1393,30 @@ export default function NeonRush() {
     return () => { cancel = true; supabase.removeChannel(ch); };
   }, [panel, lbMode, user, fetchLbFn, fetchRankFn]);
 
+  // Aligne les meilleurs scores affichés (et donc le rang + les notifications de record)
+  // sur ceux enregistrés au classement mondial.
+  useEffect(() => {
+    if (!user) return;
+    let cancel = false;
+    fetchMyBestsFn({})
+      .then((remote) => {
+        if (cancel || !remote) return;
+        setProg((p) => {
+          let changed = false;
+          const bestByMode = { ...p.bestByMode };
+          for (const m of MODES) {
+            const r = Math.floor((remote as Record<string, number>)[m.id] ?? 0);
+            if (r > (bestByMode[m.id] || 0)) { bestByMode[m.id] = r; changed = true; }
+          }
+          return changed ? { ...p, bestByMode } : p;
+        });
+      })
+      .catch(() => { /* noop */ });
+    return () => { cancel = true; };
+  }, [user, fetchMyBestsFn, lbRows]);
+
+
+
   const activePowers = (Object.keys(powers) as Array<keyof typeof powers>).filter((k) => powers[k] > 0);
   const powerKeyMap: Record<string, string> = { shield: "shield", slow: "slow", magnet: "magnet", x2: "x2" };
   const powerColor: Record<string, string> = { shield: "text-glow-cyan", slow: "text-glow-magenta", magnet: "text-glow-yellow", x2: "text-glow-yellow" };
@@ -1904,21 +1931,19 @@ export default function NeonRush() {
                   <div className="text-[10px] uppercase tracking-[0.3em] text-muted-foreground">{tr("rank")}</div>
                   <div className="font-display text-3xl font-black" style={{ color: rank.color, textShadow: `0 0 20px ${rank.color}` }}>{rank.name}</div>
                 </div>
-                {[...Array(7)].map((_, i) => {
-                  const r = ["Bronze","Silver","Gold","Platinum","Diamond","Master","Neon"][i];
-                  const min = [0,500,1500,3500,7000,12000,20000][i];
-                  const color = ["#c88a5c","#c8d0e0","#ffd76b","#7bf3ff","#c39bff","#ff7bd1","#a8ff5c"][i];
-                  const achieved = Math.max(...Object.values(prog.bestByMode)) >= min;
+                {RANKS.map((rk) => {
+                  const achieved = globalBest >= rk.min;
                   return (
-                    <div key={r} className={`flex items-center justify-between rounded-lg border p-3 ${achieved ? "border-[color:var(--neon-cyan)]/60 bg-[color:var(--neon-cyan)]/10" : "border-border/40 bg-black/20 opacity-60"}`}>
-                      <span className="font-display font-bold uppercase tracking-widest" style={{ color }}>{r}</span>
-                      <span className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">≥ {min}</span>
+                    <div key={rk.name} className={`flex items-center justify-between rounded-lg border p-3 ${achieved ? "border-[color:var(--neon-cyan)]/60 bg-[color:var(--neon-cyan)]/10" : "border-border/40 bg-black/20 opacity-60"}`}>
+                      <span className="font-display font-bold uppercase tracking-widest" style={{ color: rk.color }}>{rk.name}</span>
+                      <span className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">≥ {rk.min}</span>
                     </div>
                   );
                 })}
                 <div className="mt-3 text-[10px] uppercase tracking-[0.2em] text-muted-foreground text-center">
-                  {tr("best")}: {Math.max(...Object.values(prog.bestByMode))}
+                  {tr("best")}: {globalBest}
                 </div>
+
               </div>
             )}
 

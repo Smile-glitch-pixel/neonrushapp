@@ -95,3 +95,18 @@ export const fetchMyRank = createServerFn({ method: "GET" })
 
     return { score: mine.score, rank: (better ?? 0) + 1, total: total ?? 0 };
   });
+
+/** Meilleurs scores du joueur dans TOUS les modes, tels qu'enregistrés au classement. */
+export const fetchMyBests = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { data, error } = await context.supabase
+      .from("leaderboard_scores")
+      .select("mode, score")
+      .eq("user_id", context.userId);
+    if (error) throw error;
+    const out: Record<string, number> = {};
+    for (const r of data ?? []) out[r.mode] = Math.max(out[r.mode] ?? 0, r.score ?? 0);
+    return out;
+  });
+
