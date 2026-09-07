@@ -1931,21 +1931,19 @@ export default function NeonRush() {
                   <div className="text-[10px] uppercase tracking-[0.3em] text-muted-foreground">{tr("rank")}</div>
                   <div className="font-display text-3xl font-black" style={{ color: rank.color, textShadow: `0 0 20px ${rank.color}` }}>{rank.name}</div>
                 </div>
-                {[...Array(7)].map((_, i) => {
-                  const r = ["Bronze","Silver","Gold","Platinum","Diamond","Master","Neon"][i];
-                  const min = [0,500,1500,3500,7000,12000,20000][i];
-                  const color = ["#c88a5c","#c8d0e0","#ffd76b","#7bf3ff","#c39bff","#ff7bd1","#a8ff5c"][i];
-                  const achieved = Math.max(...Object.values(prog.bestByMode)) >= min;
+                {RANKS.map((rk) => {
+                  const achieved = globalBest >= rk.min;
                   return (
-                    <div key={r} className={`flex items-center justify-between rounded-lg border p-3 ${achieved ? "border-[color:var(--neon-cyan)]/60 bg-[color:var(--neon-cyan)]/10" : "border-border/40 bg-black/20 opacity-60"}`}>
-                      <span className="font-display font-bold uppercase tracking-widest" style={{ color }}>{r}</span>
-                      <span className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">≥ {min}</span>
+                    <div key={rk.name} className={`flex items-center justify-between rounded-lg border p-3 ${achieved ? "border-[color:var(--neon-cyan)]/60 bg-[color:var(--neon-cyan)]/10" : "border-border/40 bg-black/20 opacity-60"}`}>
+                      <span className="font-display font-bold uppercase tracking-widest" style={{ color: rk.color }}>{rk.name}</span>
+                      <span className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">≥ {rk.min}</span>
                     </div>
                   );
                 })}
                 <div className="mt-3 text-[10px] uppercase tracking-[0.2em] text-muted-foreground text-center">
-                  {tr("best")}: {Math.max(...Object.values(prog.bestByMode))}
+                  {tr("best")}: {globalBest}
                 </div>
+
               </div>
             )}
 
