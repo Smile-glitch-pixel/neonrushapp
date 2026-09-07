@@ -1393,6 +1393,30 @@ export default function NeonRush() {
     return () => { cancel = true; supabase.removeChannel(ch); };
   }, [panel, lbMode, user, fetchLbFn, fetchRankFn]);
 
+  // Aligne les meilleurs scores affichés (et donc le rang + les notifications de record)
+  // sur ceux enregistrés au classement mondial.
+  useEffect(() => {
+    if (!user) return;
+    let cancel = false;
+    fetchMyBestsFn({})
+      .then((remote) => {
+        if (cancel || !remote) return;
+        setProg((p) => {
+          let changed = false;
+          const bestByMode = { ...p.bestByMode };
+          for (const m of MODES) {
+            const r = Math.floor((remote as Record<string, number>)[m.id] ?? 0);
+            if (r > (bestByMode[m.id] || 0)) { bestByMode[m.id] = r; changed = true; }
+          }
+          return changed ? { ...p, bestByMode } : p;
+        });
+      })
+      .catch(() => { /* noop */ });
+    return () => { cancel = true; };
+  }, [user, fetchMyBestsFn, lbRows]);
+
+
+
   const activePowers = (Object.keys(powers) as Array<keyof typeof powers>).filter((k) => powers[k] > 0);
   const powerKeyMap: Record<string, string> = { shield: "shield", slow: "slow", magnet: "magnet", x2: "x2" };
   const powerColor: Record<string, string> = { shield: "text-glow-cyan", slow: "text-glow-magenta", magnet: "text-glow-yellow", x2: "text-glow-yellow" };
