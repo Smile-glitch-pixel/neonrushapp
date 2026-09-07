@@ -267,6 +267,7 @@ export default function NeonRush() {
   const submitScoreFn = useServerFn(submitScore);
   const fetchLbFn = useServerFn(fetchLeaderboard);
   const fetchRankFn = useServerFn(fetchMyRank);
+  const fetchMyBestsFn = useServerFn(fetchMyBests);
   const pushTimer = useRef<number | null>(null);
 
 
