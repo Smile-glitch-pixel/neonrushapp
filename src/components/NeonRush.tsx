@@ -451,7 +451,9 @@ export default function NeonRush() {
   const equippedSkin = SKINS.find((s) => s.id === prog.equipped) || SKINS[0];
   const equippedFx = RARITY_FX[equippedSkin.rarity];
   const best = prog.bestByMode[mode] || 0;
-  const rank = rankFor(Math.max(...Object.values(prog.bestByMode)));
+  /** Meilleur score toutes catégories : identique à celui du classement mondial. */
+  const globalBest = Math.max(0, ...MODES.map((m) => prog.bestByMode[m.id] || 0));
+  const rank = rankFor(globalBest);
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(""), 2200); };
 
