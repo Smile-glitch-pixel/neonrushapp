@@ -13,7 +13,7 @@ import { pullPlayerState, pushPlayerState } from "@/lib/player-sync.functions";
 import { useDuo } from "@/hooks/useDuo";
 import DuoLobby from "@/components/DuoLobby";
 import { mergeProg, progToRemote } from "@/lib/prog-sync";
-import { submitScore, fetchLeaderboard, fetchMyRank } from "@/lib/leaderboard.functions";
+import { submitScore, fetchLeaderboard, fetchMyRank, fetchMyBests } from "@/lib/leaderboard.functions";
 import { getMyProfile, setDisplayName, NAME_RE } from "@/lib/profile.functions";
 import { POWERS, POWER_MAP, POWER_IDS, rollPower, emptyTimers, type PowerId, type PowerTimers } from "@/lib/powerups";
 import {
