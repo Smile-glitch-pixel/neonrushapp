@@ -85,6 +85,74 @@ export type Database = {
         }
         Relationships: []
       }
+      guest_players: {
+        Row: {
+          created_at: string
+          device_id: string
+          display_name: string
+          last_seen: string
+          submit_window_start: string
+          submits_hour: number
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          device_id: string
+          display_name: string
+          last_seen?: string
+          submit_window_start?: string
+          submits_hour?: number
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          device_id?: string
+          display_name?: string
+          last_seen?: string
+          submit_window_start?: string
+          submits_hour?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      guest_scores: {
+        Row: {
+          created_at: string
+          device_id: string
+          display_name: string
+          equipped_skin: string | null
+          mode: string
+          score: number
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          device_id: string
+          display_name: string
+          equipped_skin?: string | null
+          mode: string
+          score?: number
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          device_id?: string
+          display_name?: string
+          equipped_skin?: string | null
+          mode?: string
+          score?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "guest_scores_device_id_fkey"
+            columns: ["device_id"]
+            isOneToOne: false
+            referencedRelation: "guest_players"
+            referencedColumns: ["device_id"]
+          },
+        ]
+      }
       leaderboard_scores: {
         Row: {
           created_at: string
@@ -376,6 +444,18 @@ export type Database = {
       }
       duo_revive: { Args: { _room: string; _target: string }; Returns: boolean }
       duo_tick: { Args: { _room: string }; Returns: undefined }
+      guest_claim_name: {
+        Args: { _device: string; _name: string }
+        Returns: string
+      }
+      guest_submit_score: {
+        Args: { _device: string; _mode: string; _score: number; _skin?: string }
+        Returns: boolean
+      }
+      name_available: {
+        Args: { _device?: string; _name: string }
+        Returns: boolean
+      }
     }
     Enums: {
       [_ in never]: never

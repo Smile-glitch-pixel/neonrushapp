@@ -26,17 +26,20 @@ export type Perk = {
 
 export const MAX_LOADOUT = 5;
 
+/** Prix unique de tous les power-ups (une fois la condition remplie). */
+export const PERK_COST = 10000;
+
 export const PERKS: Perk[] = [
-  { id: "start_shield",  icon: "⛨",  color: "#a0ffea", nameKey: "pkStartShield",  descKey: "pkStartShieldD",  cost: 4000,  req: { stat: "runs",       target: 60 } },
-  { id: "magnet_core",   icon: "◎",  color: "#ffb36b", nameKey: "pkMagnetCore",   descKey: "pkMagnetCoreD",   cost: 6500,  req: { stat: "orbs",       target: 4000 } },
-  { id: "combo_keeper",  icon: "∞",  color: "#fff17a", nameKey: "pkComboKeeper",  descKey: "pkComboKeeperD",  cost: 7500,  req: { stat: "bestCombo",  target: 40 } },
-  { id: "score_boost",   icon: "▲",  color: "#7bf3ff", nameKey: "pkScoreBoost",   descKey: "pkScoreBoostD",   cost: 9000,  req: { stat: "bestScore",  target: 12000 } },
-  { id: "second_wind",   icon: "✚",  color: "#ff8ad1", nameKey: "pkSecondWind",   descKey: "pkSecondWindD",   cost: 15000, req: { stat: "bestScore",  target: 25000 } },
-  { id: "slow_start",    icon: "⏱",  color: "#c39bff", nameKey: "pkSlowStart",    descKey: "pkSlowStartD",    cost: 5500,  req: { stat: "runs",       target: 200 } },
-  { id: "power_hunter",  icon: "✦",  color: "#a8ff5c", nameKey: "pkPowerHunter",  descKey: "pkPowerHunterD",  cost: 8000,  req: { stat: "powers",     target: 300 } },
-  { id: "lucky_orbs",    icon: "🍀", color: "#8affc1", nameKey: "pkLuckyOrbs",    descKey: "pkLuckyOrbsD",    cost: 10000, req: { stat: "chests",     target: 25 } },
-  { id: "guardian",      icon: "🤝", color: "#ff7bd1", nameKey: "pkGuardian",     descKey: "pkGuardianD",     cost: 12000, req: { stat: "revives",    target: 25 } },
-  { id: "hazard_shrink", icon: "◇",  color: "#c8d0e0", nameKey: "pkHazardShrink", descKey: "pkHazardShrinkD", cost: 14000, req: { stat: "duoRuns",    target: 30 } },
+  { id: "start_shield",  icon: "⛨",  color: "#a0ffea", nameKey: "pkStartShield",  descKey: "pkStartShieldD",  cost: PERK_COST, req: { stat: "runs",       target: 60 } },
+  { id: "magnet_core",   icon: "◎",  color: "#ffb36b", nameKey: "pkMagnetCore",   descKey: "pkMagnetCoreD",   cost: PERK_COST, req: { stat: "orbs",       target: 4000 } },
+  { id: "combo_keeper",  icon: "∞",  color: "#fff17a", nameKey: "pkComboKeeper",  descKey: "pkComboKeeperD",  cost: PERK_COST, req: { stat: "bestCombo",  target: 40 } },
+  { id: "score_boost",   icon: "▲",  color: "#7bf3ff", nameKey: "pkScoreBoost",   descKey: "pkScoreBoostD",   cost: PERK_COST, req: { stat: "bestScore",  target: 12000 } },
+  { id: "second_wind",   icon: "✚",  color: "#ff8ad1", nameKey: "pkSecondWind",   descKey: "pkSecondWindD",   cost: PERK_COST, req: { stat: "bestScore",  target: 25000 } },
+  { id: "slow_start",    icon: "⏱",  color: "#c39bff", nameKey: "pkSlowStart",    descKey: "pkSlowStartD",    cost: PERK_COST, req: { stat: "runs",       target: 200 } },
+  { id: "power_hunter",  icon: "✦",  color: "#a8ff5c", nameKey: "pkPowerHunter",  descKey: "pkPowerHunterD",  cost: PERK_COST, req: { stat: "powers",     target: 300 } },
+  { id: "lucky_orbs",    icon: "🍀", color: "#8affc1", nameKey: "pkLuckyOrbs",    descKey: "pkLuckyOrbsD",    cost: PERK_COST, req: { stat: "chests",     target: 25 } },
+  { id: "guardian",      icon: "🤝", color: "#ff7bd1", nameKey: "pkGuardian",     descKey: "pkGuardianD",     cost: PERK_COST, req: { stat: "revives",    target: 25 } },
+  { id: "hazard_shrink", icon: "◇",  color: "#c8d0e0", nameKey: "pkHazardShrink", descKey: "pkHazardShrinkD", cost: PERK_COST, req: { stat: "duoRuns",    target: 30 } },
 ];
 
 export const PERK_MAP: Record<PerkId, Perk> = PERKS.reduce((a, p) => { a[p.id] = p; return a; }, {} as Record<PerkId, Perk>);

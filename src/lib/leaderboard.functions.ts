@@ -45,7 +45,7 @@ export const submitScore = createServerFn({ method: "POST" })
     return { ok: true, updated: true };
   });
 
-/** Top 100 mondial — public, visible même sans être connecté. */
+/** Top 100 mondial — public, comptes et invités mélangés. */
 export const fetchLeaderboard = createServerFn({ method: "GET" })
   .inputValidator((input: unknown) => z.object({ mode: ModeEnum }).parse(input))
   .handler(async ({ data }) => {
@@ -55,14 +55,29 @@ export const fetchLeaderboard = createServerFn({ method: "GET" })
       process.env["SUPABASE_PUBLISHABLE_KEY"]!,
       { auth: { persistSession: false, autoRefreshToken: false } },
     );
-    const { data: rows, error } = await sb
-      .from("leaderboard_scores")
-      .select("user_id, mode, score, display_name, equipped_skin, updated_at")
-      .eq("mode", data.mode)
-      .order("score", { ascending: false })
-      .limit(100);
-    if (error) throw error;
-    return rows ?? [];
+    const [accounts, guests] = await Promise.all([
+      sb.from("leaderboard_scores")
+        .select("user_id, mode, score, display_name, equipped_skin, updated_at")
+        .eq("mode", data.mode).order("score", { ascending: false }).limit(100),
+      sb.from("guest_scores")
+        .select("mode, score, display_name, equipped_skin, updated_at")
+        .eq("mode", data.mode).order("score", { ascending: false }).limit(100),
+    ]);
+    if (accounts.error) throw accounts.error;
+    if (guests.error) throw guests.error;
+
+    type Row = {
+      user_id: string | null; mode: string; score: number;
+      display_name: string | null; equipped_skin: string | null;
+      updated_at: string | null; guest: boolean;
+    };
+    const rows: Row[] = [
+      ...(accounts.data ?? []).map((r) => ({ ...r, guest: false }) as Row),
+      // L'identifiant d'appareil n'est jamais exposé publiquement.
+      ...(guests.data ?? []).map((r) => ({ ...r, user_id: null, guest: true }) as Row),
+    ];
+    rows.sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
+    return rows.slice(0, 100);
   });
 
 /** Classement personnel du joueur connecté. */
