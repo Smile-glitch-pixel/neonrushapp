@@ -23,6 +23,10 @@ import {
 import { useNotifications } from "@/hooks/useNotifications";
 import NeonNotifications from "@/components/NeonNotifications";
 import NicknameGate from "@/components/NicknameGate";
+import NotifBadge from "@/components/NotifBadge";
+import { useBadges, type BadgeSignal } from "@/hooks/useBadges";
+import { getDeviceId } from "@/lib/guest";
+import { guestClaimName, guestSubmitScore, guestBests } from "@/lib/guest.functions";
 
 /** Statistiques de carrière : `best*` prend le maximum, le reste s'accumule. */
 const bumpStats = (
@@ -406,14 +410,20 @@ export default function NeonRush() {
   }, [prog, user, hydrated, scope, progEpoch, pushFn]);
 
 
-  // ---- PSEUDO OBLIGATOIRE (compte) ----
+  // ---- PSEUDO OBLIGATOIRE (comptes ET invités) ----
   const getProfileFn = useServerFn(getMyProfile);
   const setNameFn = useServerFn(setDisplayName);
+  const claimGuestNameFn = useServerFn(guestClaimName);
+  const guestSubmitFn = useServerFn(guestSubmitScore);
+  const guestBestsFn = useServerFn(guestBests);
   const [profileName, setProfileName] = useState<string | null>(null);
   const [needNick, setNeedNick] = useState(false);
+  /** Identifiant d'appareil stable (invités) : réserve le pseudo à vie. */
+  const [deviceId, setDeviceId] = useState<string | null>(null);
+  useEffect(() => { setDeviceId(getDeviceId()); }, []);
 
   useEffect(() => {
-    if (!user) { setProfileName(null); setNeedNick(false); return; }
+    if (!user) { setProfileName(null); return; }
     let cancel = false;
     (async () => {
       try {
@@ -431,15 +441,32 @@ export default function NeonRush() {
     return () => { cancel = true; };
   }, [user, getProfileFn]);
 
+  // Invité : pseudo obligatoire lui aussi (sinon pas de classement possible).
+  useEffect(() => {
+    if (user) return;
+    if (!hydrated) return;
+    setNeedNick(!(prog.displayName && NAME_RE.test(prog.displayName)));
+  }, [user, hydrated, prog.displayName]);
+
   const saveNickname = useCallback(async (raw: string) => {
-    const r = await setNameFn({ data: { name: raw.trim() } });
+    const name = raw.trim();
+    if (!user) {
+      if (!deviceId) return { ok: false as const, reason: "INVALID" as const };
+      const r = await claimGuestNameFn({ data: { deviceId, name } });
+      if (r.ok) {
+        setNeedNick(false);
+        setProg((p) => ({ ...p, displayName: name }));
+      }
+      return r;
+    }
+    const r = await setNameFn({ data: { name } });
     if (r.ok) {
       setProfileName(r.name);
       setNeedNick(false);
       setProg((p) => ({ ...p, displayName: r.name }));
     }
     return r;
-  }, [setNameFn]);
+  }, [setNameFn, claimGuestNameFn, user, deviceId]);
 
   const signOut = async () => { await supabase.auth.signOut(); };
 
