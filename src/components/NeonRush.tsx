@@ -1712,14 +1712,28 @@ export default function NeonRush() {
 
             {/* Nav tabs */}
             <div className="mt-5 grid grid-cols-2 gap-2 sm:grid-cols-3 text-xs uppercase tracking-[0.2em]">
-              <button onClick={() => setPanel("modes")} className="panel-neon rounded-lg py-2 text-glow-cyan hover:scale-105 transition">{tr("mode")}</button>
-              <button onClick={() => setPanel("shop")} className="panel-neon rounded-lg py-2 text-glow-yellow hover:scale-105 transition">🎁 {tr("shop")}</button>
-              <button onClick={() => setPanel("perks")} className="panel-neon rounded-lg py-2 text-glow-cyan hover:scale-105 transition">⚡ {tr("powerups")}</button>
-              <button onClick={() => setPanel("skins")} className="panel-neon rounded-lg py-2 text-glow-magenta hover:scale-105 transition">{tr("skins")}</button>
-              <button onClick={() => setPanel("pass")} className="panel-neon rounded-lg py-2 text-glow-yellow hover:scale-105 transition">{tr("pass")}</button>
-              <button onClick={() => setPanel("missions")} className="panel-neon rounded-lg py-2 text-glow-cyan hover:scale-105 transition">{tr("missions")}</button>
-              <button onClick={() => setPanel("leaderboard")} className="panel-neon rounded-lg py-2 text-glow-yellow hover:scale-105 transition">🌍 {tr("leaderboard")}</button>
-              <button onClick={() => setPanel("ranked")} className="panel-neon rounded-lg py-2 text-glow-cyan hover:scale-105 transition">{tr("ranked")}</button>
+              <button onClick={() => setPanel("modes")} className="panel-neon relative rounded-lg py-2 text-glow-cyan hover:scale-105 transition">{tr("mode")}</button>
+              <button onClick={() => setPanel("shop")} className="panel-neon relative rounded-lg py-2 text-glow-yellow hover:scale-105 transition">
+                🎁 {tr("shop")}{badge("shop") && <NotifBadge count={badge("shop")!.count} />}
+              </button>
+              <button onClick={() => setPanel("perks")} className="panel-neon relative rounded-lg py-2 text-glow-cyan hover:scale-105 transition">
+                ⚡ {tr("powerups")}{badge("perks") && <NotifBadge count={badge("perks")!.count} />}
+              </button>
+              <button onClick={() => setPanel("skins")} className="panel-neon relative rounded-lg py-2 text-glow-magenta hover:scale-105 transition">
+                {tr("skins")}{badge("skins") && <NotifBadge />}
+              </button>
+              <button onClick={() => setPanel("pass")} className="panel-neon relative rounded-lg py-2 text-glow-yellow hover:scale-105 transition">
+                {tr("pass")}{badge("pass") && <NotifBadge count={badge("pass")!.count} />}
+              </button>
+              <button onClick={() => setPanel("missions")} className="panel-neon relative rounded-lg py-2 text-glow-cyan hover:scale-105 transition">
+                {tr("missions")}{badge("missions") && <NotifBadge count={badge("missions")!.count} />}
+              </button>
+              <button onClick={() => setPanel("leaderboard")} className="panel-neon relative rounded-lg py-2 text-glow-yellow hover:scale-105 transition">
+                🌍 {tr("leaderboard")}{badge("leaderboard") && <NotifBadge />}
+              </button>
+              <button onClick={() => setPanel("ranked")} className="panel-neon relative rounded-lg py-2 text-glow-cyan hover:scale-105 transition">
+                {tr("ranked")}{badge("ranked") && <NotifBadge />}
+              </button>
               <button onClick={() => setPanel("duo")} className="panel-neon rounded-lg py-2 text-glow-magenta hover:scale-105 transition col-span-2 sm:col-span-3">🤝 {tr("duo")}</button>
               <button onClick={() => setPanel("settings")} className="panel-neon rounded-lg py-2 text-glow-magenta hover:scale-105 transition col-span-2 sm:col-span-3">{tr("settings")}</button>
             </div>
