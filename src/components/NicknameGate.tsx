@@ -11,7 +11,7 @@ type Props = {
 };
 
 /** Écran bloquant : un pseudo unique est obligatoire pour jouer/apparaître au classement. */
-export default function NicknameGate({ tr, onSave, onSignOut }: Props) {
+export default function NicknameGate({ tr, onSave, onSignOut, guest = false }: Props) {
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
