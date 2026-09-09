@@ -34,7 +34,7 @@ export default function NicknameGate({ tr, onSave, onSignOut, guest = false }: P
       <div className="panel-neon w-full max-w-sm rounded-2xl p-6 animate-scale-in">
         <div className="text-[10px] uppercase tracking-[0.4em] text-muted-foreground">{tr("ranked")}</div>
         <h2 className="mt-1 font-display text-2xl font-black text-glow-cyan">{tr("nickTitle")}</h2>
-        <p className="mt-2 text-xs text-muted-foreground">{tr("nickDesc")}</p>
+        <p className="mt-2 text-xs text-muted-foreground">{tr(guest ? "nickGuestDesc" : "nickDesc")}</p>
         <form onSubmit={submit} className="mt-4 space-y-3">
           <input
             autoFocus value={name} onChange={(e) => { setName(e.target.value); setErr(null); }}
@@ -50,9 +50,11 @@ export default function NicknameGate({ tr, onSave, onSignOut, guest = false }: P
             {tr("nickSave")}
           </button>
         </form>
-        <button onClick={onSignOut} className="mt-4 w-full text-center text-[10px] uppercase tracking-[0.3em] text-muted-foreground hover:text-glow-magenta">
-          {tr("signOut")}
-        </button>
+        {onSignOut && (
+          <button onClick={onSignOut} className="mt-4 w-full text-center text-[10px] uppercase tracking-[0.3em] text-muted-foreground hover:text-glow-magenta">
+            {tr("signOut")}
+          </button>
+        )}
       </div>
     </div>
   );
