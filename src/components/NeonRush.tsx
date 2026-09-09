@@ -823,7 +823,7 @@ export default function NeonRush() {
       powers: s.runPowers || 0,
     }, finalMode);
 
-    // Leaderboard submit if signed in
+    // Classement mondial : comptes ET invités (pseudo obligatoire dans les deux cas)
     if (user && finalScore > 0) {
       submitScoreFn({ data: {
         mode: finalMode,
@@ -831,8 +831,15 @@ export default function NeonRush() {
         display_name: prog.displayName ?? null,
         equipped_skin: prog.equipped,
       } }).catch(() => { /* noop */ });
+    } else if (!user && finalScore > 0 && deviceId && prog.displayName && finalMode !== "zen") {
+      guestSubmitFn({ data: {
+        deviceId,
+        mode: finalMode as "classic" | "hardcore" | "blitz",
+        score: finalScore,
+        skin: prog.equipped,
+      } }).catch(() => { /* noop */ });
     }
-  }, [prog.displayName, prog.equipped, user, submitScoreFn]);
+  }, [prog.displayName, prog.equipped, user, submitScoreFn, deviceId, guestSubmitFn]);
 
 
   // Main loop
