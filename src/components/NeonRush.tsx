@@ -23,6 +23,10 @@ import {
 import { useNotifications } from "@/hooks/useNotifications";
 import NeonNotifications from "@/components/NeonNotifications";
 import NicknameGate from "@/components/NicknameGate";
+import NotifBadge from "@/components/NotifBadge";
+import { useBadges, type BadgeSignal } from "@/hooks/useBadges";
+import { getDeviceId } from "@/lib/guest";
+import { guestClaimName, guestSubmitScore, guestBests } from "@/lib/guest.functions";
 
 /** Statistiques de carrière : `best*` prend le maximum, le reste s'accumule. */
 const bumpStats = (
@@ -406,14 +410,20 @@ export default function NeonRush() {
   }, [prog, user, hydrated, scope, progEpoch, pushFn]);
 
 
-  // ---- PSEUDO OBLIGATOIRE (compte) ----
+  // ---- PSEUDO OBLIGATOIRE (comptes ET invités) ----
   const getProfileFn = useServerFn(getMyProfile);
   const setNameFn = useServerFn(setDisplayName);
+  const claimGuestNameFn = useServerFn(guestClaimName);
+  const guestSubmitFn = useServerFn(guestSubmitScore);
+  const guestBestsFn = useServerFn(guestBests);
   const [profileName, setProfileName] = useState<string | null>(null);
   const [needNick, setNeedNick] = useState(false);
+  /** Identifiant d'appareil stable (invités) : réserve le pseudo à vie. */
+  const [deviceId, setDeviceId] = useState<string | null>(null);
+  useEffect(() => { setDeviceId(getDeviceId()); }, []);
 
   useEffect(() => {
-    if (!user) { setProfileName(null); setNeedNick(false); return; }
+    if (!user) { setProfileName(null); return; }
     let cancel = false;
     (async () => {
       try {
@@ -431,15 +441,32 @@ export default function NeonRush() {
     return () => { cancel = true; };
   }, [user, getProfileFn]);
 
+  // Invité : pseudo obligatoire lui aussi (sinon pas de classement possible).
+  useEffect(() => {
+    if (user) return;
+    if (!hydrated) return;
+    setNeedNick(!(prog.displayName && NAME_RE.test(prog.displayName)));
+  }, [user, hydrated, prog.displayName]);
+
   const saveNickname = useCallback(async (raw: string) => {
-    const r = await setNameFn({ data: { name: raw.trim() } });
+    const name = raw.trim();
+    if (!user) {
+      if (!deviceId) return { ok: false as const, reason: "INVALID" as const };
+      const r = await claimGuestNameFn({ data: { deviceId, name } });
+      if (r.ok) {
+        setNeedNick(false);
+        setProg((p) => ({ ...p, displayName: name }));
+      }
+      return r;
+    }
+    const r = await setNameFn({ data: { name } });
     if (r.ok) {
       setProfileName(r.name);
       setNeedNick(false);
       setProg((p) => ({ ...p, displayName: r.name }));
     }
     return r;
-  }, [setNameFn]);
+  }, [setNameFn, claimGuestNameFn, user, deviceId]);
 
   const signOut = async () => { await supabase.auth.signOut(); };
 
@@ -796,7 +823,7 @@ export default function NeonRush() {
       powers: s.runPowers || 0,
     }, finalMode);
 
-    // Leaderboard submit if signed in
+    // Classement mondial : comptes ET invités (pseudo obligatoire dans les deux cas)
     if (user && finalScore > 0) {
       submitScoreFn({ data: {
         mode: finalMode,
@@ -804,8 +831,15 @@ export default function NeonRush() {
         display_name: prog.displayName ?? null,
         equipped_skin: prog.equipped,
       } }).catch(() => { /* noop */ });
+    } else if (!user && finalScore > 0 && deviceId && prog.displayName && finalMode !== "zen") {
+      guestSubmitFn({ data: {
+        deviceId,
+        mode: finalMode as "classic" | "hardcore" | "blitz",
+        score: finalScore,
+        skin: prog.equipped,
+      } }).catch(() => { /* noop */ });
     }
-  }, [prog.displayName, prog.equipped, user, submitScoreFn]);
+  }, [prog.displayName, prog.equipped, user, submitScoreFn, deviceId, guestSubmitFn]);
 
 
   // Main loop
@@ -1415,6 +1449,64 @@ export default function NeonRush() {
     return () => { cancel = true; };
   }, [user, fetchMyBestsFn, lbRows]);
 
+  // Invité : aligne les meilleurs scores locaux sur ceux enregistrés au classement.
+  useEffect(() => {
+    if (user || !deviceId) return;
+    let cancel = false;
+    guestBestsFn({ data: { deviceId } })
+      .then((remote) => {
+        if (cancel || !remote) return;
+        setProg((p) => {
+          let changed = false;
+          const bestByMode = { ...p.bestByMode };
+          for (const m of MODES) {
+            const r = Math.floor((remote as Record<string, number>)[m.id] ?? 0);
+            if (r > (bestByMode[m.id] || 0)) { bestByMode[m.id] = r; changed = true; }
+          }
+          return changed ? { ...p, bestByMode } : p;
+        });
+      })
+      .catch(() => { /* noop */ });
+    return () => { cancel = true; };
+  }, [user, deviceId, guestBestsFn]);
+
+  /* ------------------------- BADGES DE NOTIFICATION -------------------------
+   * Chaque source déclare une signature de « ce qu'il y a à voir ».
+   * Ouvrir l'onglet éteint le badge. Ajouter une source = ajouter une entrée. */
+  const badgeSignals = useMemo<Record<string, BadgeSignal>>(() => {
+    // Pass : paliers débloqués non réclamés
+    const passReady = PASS_REWARDS.reduce(
+      (n, _r, i) => n + (i < passTier && !prog.claimed.includes(i) ? 1 : 0), 0);
+    // Quêtes : missions terminées non réclamées
+    const missionReady = (["daily", "weekly"] as const).reduce((n, b) => n + prog.missions[b].list.filter((m) => {
+      const tpl = findTemplate(m.id);
+      return tpl && !m.claimed && m.progress >= tpl.target;
+    }).length, 0);
+    // Power-ups : nouvellement débloqués et non achetés
+    const perksReady = PERKS.filter((pk) =>
+      perkUnlocked(pk, prog.stats ?? {}) && !(prog.purchases ?? []).includes(perkKey(pk.id))).length;
+    // Skins : nouveaux skins obtenus
+    const ownedCount = prog.owned.length;
+
+    return {
+      pass: passReady > 0 ? { sig: `t${passTier}:c${prog.claimed.length}`, count: passReady } : null,
+      missions: missionReady > 0 ? { sig: `m${missionReady}:${prog.missions.daily.seed}:${prog.missions.weekly.seed}`, count: missionReady } : null,
+      leaderboard: { sig: `r${rank.id}:${myRank?.rank ?? "na"}`, count: 0 },
+      ranked: { sig: `rk${rank.id}`, count: 0 },
+      shop: chestLeft > 0 ? { sig: `${chestDayKey()}:${chestLeft}`, count: chestLeft } : null,
+      perks: perksReady > 0 ? { sig: `p${perksReady}:${(prog.purchases ?? []).length}`, count: perksReady } : null,
+      skins: ownedCount > 1 ? { sig: `s${ownedCount}`, count: 0 } : null,
+    };
+  }, [passTier, prog.claimed, prog.missions, prog.stats, prog.purchases, prog.owned, rank.id, myRank, chestLeft]);
+
+  const { badge, markSeen } = useBadges(scope, badgeSignals);
+
+  // Ouvrir un onglet = l'avoir consulté.
+  useEffect(() => {
+    if (!panel) return;
+    const id = window.setTimeout(() => markSeen(panel), 400);
+    return () => window.clearTimeout(id);
+  }, [panel, markSeen]);
 
 
   const activePowers = (Object.keys(powers) as Array<keyof typeof powers>).filter((k) => powers[k] > 0);
@@ -1620,14 +1712,28 @@ export default function NeonRush() {
 
             {/* Nav tabs */}
             <div className="mt-5 grid grid-cols-2 gap-2 sm:grid-cols-3 text-xs uppercase tracking-[0.2em]">
-              <button onClick={() => setPanel("modes")} className="panel-neon rounded-lg py-2 text-glow-cyan hover:scale-105 transition">{tr("mode")}</button>
-              <button onClick={() => setPanel("shop")} className="panel-neon rounded-lg py-2 text-glow-yellow hover:scale-105 transition">🎁 {tr("shop")}</button>
-              <button onClick={() => setPanel("perks")} className="panel-neon rounded-lg py-2 text-glow-cyan hover:scale-105 transition">⚡ {tr("powerups")}</button>
-              <button onClick={() => setPanel("skins")} className="panel-neon rounded-lg py-2 text-glow-magenta hover:scale-105 transition">{tr("skins")}</button>
-              <button onClick={() => setPanel("pass")} className="panel-neon rounded-lg py-2 text-glow-yellow hover:scale-105 transition">{tr("pass")}</button>
-              <button onClick={() => setPanel("missions")} className="panel-neon rounded-lg py-2 text-glow-cyan hover:scale-105 transition">{tr("missions")}</button>
-              <button onClick={() => setPanel("leaderboard")} className="panel-neon rounded-lg py-2 text-glow-yellow hover:scale-105 transition">🌍 {tr("leaderboard")}</button>
-              <button onClick={() => setPanel("ranked")} className="panel-neon rounded-lg py-2 text-glow-cyan hover:scale-105 transition">{tr("ranked")}</button>
+              <button onClick={() => setPanel("modes")} className="panel-neon relative rounded-lg py-2 text-glow-cyan hover:scale-105 transition">{tr("mode")}</button>
+              <button onClick={() => setPanel("shop")} className="panel-neon relative rounded-lg py-2 text-glow-yellow hover:scale-105 transition">
+                🎁 {tr("shop")}{badge("shop") && <NotifBadge count={badge("shop")!.count} />}
+              </button>
+              <button onClick={() => setPanel("perks")} className="panel-neon relative rounded-lg py-2 text-glow-cyan hover:scale-105 transition">
+                ⚡ {tr("powerups")}{badge("perks") && <NotifBadge count={badge("perks")!.count} />}
+              </button>
+              <button onClick={() => setPanel("skins")} className="panel-neon relative rounded-lg py-2 text-glow-magenta hover:scale-105 transition">
+                {tr("skins")}{badge("skins") && <NotifBadge />}
+              </button>
+              <button onClick={() => setPanel("pass")} className="panel-neon relative rounded-lg py-2 text-glow-yellow hover:scale-105 transition">
+                {tr("pass")}{badge("pass") && <NotifBadge count={badge("pass")!.count} />}
+              </button>
+              <button onClick={() => setPanel("missions")} className="panel-neon relative rounded-lg py-2 text-glow-cyan hover:scale-105 transition">
+                {tr("missions")}{badge("missions") && <NotifBadge count={badge("missions")!.count} />}
+              </button>
+              <button onClick={() => setPanel("leaderboard")} className="panel-neon relative rounded-lg py-2 text-glow-yellow hover:scale-105 transition">
+                🌍 {tr("leaderboard")}{badge("leaderboard") && <NotifBadge />}
+              </button>
+              <button onClick={() => setPanel("ranked")} className="panel-neon relative rounded-lg py-2 text-glow-cyan hover:scale-105 transition">
+                {tr("ranked")}{badge("ranked") && <NotifBadge />}
+              </button>
               <button onClick={() => setPanel("duo")} className="panel-neon rounded-lg py-2 text-glow-magenta hover:scale-105 transition col-span-2 sm:col-span-3">🤝 {tr("duo")}</button>
               <button onClick={() => setPanel("settings")} className="panel-neon rounded-lg py-2 text-glow-magenta hover:scale-105 transition col-span-2 sm:col-span-3">{tr("settings")}</button>
             </div>
