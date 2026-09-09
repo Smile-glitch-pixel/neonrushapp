@@ -1449,6 +1449,64 @@ export default function NeonRush() {
     return () => { cancel = true; };
   }, [user, fetchMyBestsFn, lbRows]);
 
+  // Invité : aligne les meilleurs scores locaux sur ceux enregistrés au classement.
+  useEffect(() => {
+    if (user || !deviceId) return;
+    let cancel = false;
+    guestBestsFn({ data: { deviceId } })
+      .then((remote) => {
+        if (cancel || !remote) return;
+        setProg((p) => {
+          let changed = false;
+          const bestByMode = { ...p.bestByMode };
+          for (const m of MODES) {
+            const r = Math.floor((remote as Record<string, number>)[m.id] ?? 0);
+            if (r > (bestByMode[m.id] || 0)) { bestByMode[m.id] = r; changed = true; }
+          }
+          return changed ? { ...p, bestByMode } : p;
+        });
+      })
+      .catch(() => { /* noop */ });
+    return () => { cancel = true; };
+  }, [user, deviceId, guestBestsFn]);
+
+  /* ------------------------- BADGES DE NOTIFICATION -------------------------
+   * Chaque source déclare une signature de « ce qu'il y a à voir ».
+   * Ouvrir l'onglet éteint le badge. Ajouter une source = ajouter une entrée. */
+  const badgeSignals = useMemo<Record<string, BadgeSignal>>(() => {
+    // Pass : paliers débloqués non réclamés
+    const passReady = PASS_REWARDS.reduce(
+      (n, _r, i) => n + (i < passTier && !prog.claimed.includes(i) ? 1 : 0), 0);
+    // Quêtes : missions terminées non réclamées
+    const missionReady = (["daily", "weekly"] as const).reduce((n, b) => n + prog.missions[b].list.filter((m) => {
+      const tpl = findTemplate(m.id);
+      return tpl && !m.claimed && m.progress >= tpl.target;
+    }).length, 0);
+    // Power-ups : nouvellement débloqués et non achetés
+    const perksReady = PERKS.filter((pk) =>
+      perkUnlocked(pk, prog.stats ?? {}) && !(prog.purchases ?? []).includes(perkKey(pk.id))).length;
+    // Skins : nouveaux skins obtenus
+    const ownedCount = prog.owned.length;
+
+    return {
+      pass: passReady > 0 ? { sig: `t${passTier}:c${prog.claimed.length}`, count: passReady } : null,
+      missions: missionReady > 0 ? { sig: `m${missionReady}:${prog.missions.daily.seed}:${prog.missions.weekly.seed}`, count: missionReady } : null,
+      leaderboard: { sig: `r${rank.id}:${myRank?.rank ?? "na"}`, count: 0 },
+      ranked: { sig: `rk${rank.id}`, count: 0 },
+      shop: chestLeft > 0 ? { sig: `${chestDayKey()}:${chestLeft}`, count: chestLeft } : null,
+      perks: perksReady > 0 ? { sig: `p${perksReady}:${(prog.purchases ?? []).length}`, count: perksReady } : null,
+      skins: ownedCount > 1 ? { sig: `s${ownedCount}`, count: 0 } : null,
+    };
+  }, [passTier, prog.claimed, prog.missions, prog.stats, prog.purchases, prog.owned, rank.id, myRank, chestLeft]);
+
+  const { badge, markSeen } = useBadges(scope, badgeSignals);
+
+  // Ouvrir un onglet = l'avoir consulté.
+  useEffect(() => {
+    if (!panel) return;
+    const id = window.setTimeout(() => markSeen(panel), 400);
+    return () => window.clearTimeout(id);
+  }, [panel, markSeen]);
 
 
   const activePowers = (Object.keys(powers) as Array<keyof typeof powers>).filter((k) => powers[k] > 0);
