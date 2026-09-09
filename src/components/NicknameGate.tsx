@@ -4,7 +4,10 @@ import { NAME_RE } from "@/lib/profile.functions";
 type Props = {
   tr: (k: string) => string;
   onSave: (name: string) => Promise<{ ok: boolean; reason?: string; name?: string }>;
-  onSignOut: () => void;
+  /** Absent en mode invité (rien à déconnecter). */
+  onSignOut?: () => void;
+  /** true = joueur non connecté (invité) : texte adapté. */
+  guest?: boolean;
 };
 
 /** Écran bloquant : un pseudo unique est obligatoire pour jouer/apparaître au classement. */
