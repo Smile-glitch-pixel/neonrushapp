@@ -2016,7 +2016,7 @@ export default function NeonRush() {
                   {lbRows.map((row, idx) => {
                     const isMe = user?.id === row.user_id;
                     return (
-                      <div key={row.user_id} className={`flex items-center justify-between rounded-lg border px-3 py-2 ${isMe ? "border-[color:var(--neon-cyan)] bg-[color:var(--neon-cyan)]/10" : "border-border/40 bg-black/20"}`}>
+                    <div key={`${lbMode}-${idx}-${row.guest ? "g" : "a"}-${row.user_id ?? row.display_name}`} className={`flex items-center justify-between rounded-lg border px-3 py-2 ${isMe ? "border-[color:var(--neon-cyan)] bg-[color:var(--neon-cyan)]/10" : "border-border/40 bg-black/20"}`}>
                         <div className="flex items-center gap-2 min-w-0">
                           <span className={`font-display font-black text-sm w-8 ${idx === 0 ? "text-glow-yellow" : idx < 3 ? "text-glow-magenta" : "text-muted-foreground"}`}>#{idx + 1}</span>
                           <span className="text-xs font-bold uppercase tracking-widest truncate">{row.display_name || "Anon"}</span>
