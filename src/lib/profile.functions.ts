@@ -25,7 +25,9 @@ export const checkDisplayName = createServerFn({ method: "GET" })
   .handler(async ({ data, context }) => {
     const name = data.name.trim();
     if (!NAME_RE.test(name)) return { ok: false, reason: "INVALID" as const };
-    const { data: available, error } = await context.supabase.rpc("display_name_available", { _name: name });
+    const { data: available, error } = await context.supabase.rpc("display_name_available", {
+      _name: name,
+    });
     if (error) throw error;
     return available ? { ok: true as const } : { ok: false, reason: "TAKEN" as const };
   });
@@ -38,7 +40,10 @@ export const setDisplayName = createServerFn({ method: "POST" })
     const name = data.name.trim();
     if (!NAME_RE.test(name)) return { ok: false as const, reason: "INVALID" as const };
 
-    const { data: available, error: availErr } = await context.supabase.rpc("display_name_available", { _name: name });
+    const { data: available, error: availErr } = await context.supabase.rpc(
+      "display_name_available",
+      { _name: name },
+    );
     if (availErr) throw availErr;
     if (!available) return { ok: false as const, reason: "TAKEN" as const };
 
@@ -46,7 +51,10 @@ export const setDisplayName = createServerFn({ method: "POST" })
       .from("profiles")
       .upsert({ id: context.userId, display_name: name }, { onConflict: "id" });
     if (error) {
-      if ((error as { code?: string }).code === "23505" || /duplicate|unique/i.test(error.message)) {
+      if (
+        (error as { code?: string }).code === "23505" ||
+        /duplicate|unique/i.test(error.message)
+      ) {
         return { ok: false as const, reason: "TAKEN" as const };
       }
       throw error;

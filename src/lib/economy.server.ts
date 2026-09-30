@@ -26,12 +26,16 @@ const VALID = new Set(SKINS.map((s) => s.id as string));
 export async function loadEconomy(supabase: DB, userId: string): Promise<EconomyState> {
   const { data, error } = await supabase
     .from("player_state")
-    .select("coins, gems, xp, level, owned, equipped, claimed, pass_claimed, inventory, achievements, stats, purchases")
+    .select(
+      "coins, gems, xp, level, owned, equipped, claimed, pass_claimed, inventory, achievements, stats, purchases",
+    )
     .eq("user_id", userId)
     .maybeSingle();
   if (error) throw error;
   const row = data ?? null;
-  const owned = ((row?.owned as string[] | null) ?? ["cyan"]).filter((id) => VALID.has(id)) as SkinId[];
+  const owned = ((row?.owned as string[] | null) ?? ["cyan"]).filter((id) =>
+    VALID.has(id),
+  ) as SkinId[];
   if (!owned.includes("cyan")) owned.push("cyan");
   const equipped = (row?.equipped && VALID.has(row.equipped) ? row.equipped : "cyan") as SkinId;
   const xp = Number(row?.xp ?? 0);
@@ -42,16 +46,20 @@ export async function loadEconomy(supabase: DB, userId: string): Promise<Economy
     level: levelFromXp(xp),
     owned,
     equipped,
-    claimed: ((row?.claimed as number[] | null) ?? []),
-    pass_claimed: ((row?.pass_claimed as number[] | null) ?? []),
-    inventory: ((row?.inventory as Inventory | null) ?? {}),
-    achievements: ((row?.achievements as AchievementsData | null) ?? {}),
-    stats: ((row?.stats as Stats | null) ?? {}),
-    purchases: ((row?.purchases as string[] | null) ?? []),
+    claimed: (row?.claimed as number[] | null) ?? [],
+    pass_claimed: (row?.pass_claimed as number[] | null) ?? [],
+    inventory: (row?.inventory as Inventory | null) ?? {},
+    achievements: (row?.achievements as AchievementsData | null) ?? {},
+    stats: (row?.stats as Stats | null) ?? {},
+    purchases: (row?.purchases as string[] | null) ?? [],
   };
 }
 
-export async function saveEconomy(supabase: DB, userId: string, s: EconomyState): Promise<EconomyState> {
+export async function saveEconomy(
+  supabase: DB,
+  userId: string,
+  s: EconomyState,
+): Promise<EconomyState> {
   const level = levelFromXp(s.xp);
   const payload = {
     user_id: userId,
@@ -80,16 +88,26 @@ export async function logEvent(
   ref: string,
   payload: Record<string, unknown>,
 ) {
-  await supabase.from("economy_events").insert({ user_id: userId, kind, ref, payload: payload as never });
+  await supabase
+    .from("economy_events")
+    .insert({ user_id: userId, kind, ref, payload: payload as never });
 }
 
 /** Applique un lot de récompenses sur l'état (jamais de valeur négative). */
 export function grant(
   s: EconomyState,
-  r: { coins?: number; gems?: number; xp?: number; skins?: string[]; coinChests?: number; gemChests?: number },
+  r: {
+    coins?: number;
+    gems?: number;
+    xp?: number;
+    skins?: string[];
+    coinChests?: number;
+    gemChests?: number;
+  },
 ): EconomyState {
   const owned = [...s.owned];
-  for (const sk of r.skins ?? []) if (VALID.has(sk) && !owned.includes(sk as SkinId)) owned.push(sk as SkinId);
+  for (const sk of r.skins ?? [])
+    if (VALID.has(sk) && !owned.includes(sk as SkinId)) owned.push(sk as SkinId);
   const inv: Inventory = { ...s.inventory };
   if (r.coinChests) inv.coinChests = (inv.coinChests ?? 0) + r.coinChests;
   if (r.gemChests) inv.gemChests = (inv.gemChests ?? 0) + r.gemChests;

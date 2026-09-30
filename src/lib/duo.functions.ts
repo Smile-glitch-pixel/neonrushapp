@@ -84,7 +84,13 @@ export const duoJoinRoom = createServerFn({ method: "POST" })
     });
     if (error) {
       const msg = error.message || "";
-      for (const code of ["ROOM_NOT_FOUND", "ROOM_EXPIRED", "ROOM_OWN", "ROOM_CLOSED", "ROOM_FULL"]) {
+      for (const code of [
+        "ROOM_NOT_FOUND",
+        "ROOM_EXPIRED",
+        "ROOM_OWN",
+        "ROOM_CLOSED",
+        "ROOM_FULL",
+      ]) {
         if (msg.includes(code)) throw new Error(code);
       }
       throw error;
@@ -137,7 +143,14 @@ export const duoBeginRun = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     await context.supabase
       .from("room_players")
-      .update({ score: 0, finished: false, state: "alive", down_until: null, revives: 0, last_seen: new Date().toISOString() })
+      .update({
+        score: 0,
+        finished: false,
+        state: "alive",
+        down_until: null,
+        revives: 0,
+        last_seen: new Date().toISOString(),
+      })
       .eq("room_id", data.room_id)
       .eq("user_id", context.userId);
     return { ok: true };
@@ -169,7 +182,12 @@ export const duoPushScore = createServerFn({ method: "POST" })
 export const duoGoDown = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input: unknown) =>
-    z.object({ room_id: z.string().uuid(), down_ms: z.number().int().min(1000).max(30000).optional() }).parse(input),
+    z
+      .object({
+        room_id: z.string().uuid(),
+        down_ms: z.number().int().min(1000).max(30000).optional(),
+      })
+      .parse(input),
   )
   .handler(async ({ data, context }) => {
     const { error } = await context.supabase.rpc("duo_go_down", {
@@ -209,7 +227,9 @@ export const duoHeartbeat = createServerFn({ method: "POST" })
 export const duoEndRun = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input: unknown) =>
-    z.object({ room_id: z.string().uuid(), score: z.number().int().min(0).max(10_000_000) }).parse(input),
+    z
+      .object({ room_id: z.string().uuid(), score: z.number().int().min(0).max(10_000_000) })
+      .parse(input),
   )
   .handler(async ({ data, context }) => {
     await context.supabase
@@ -266,7 +286,8 @@ function summarize(room: DuoRoomState, userId: string): DuoCoopSummary {
   return {
     settled: room.status === "finished",
     teamScore: Math.max(room.team_score || 0, live),
-    survivedMs: room.survived_ms || (room.started_at ? Date.now() - new Date(room.started_at).getTime() : 0),
+    survivedMs:
+      room.survived_ms || (room.started_at ? Date.now() - new Date(room.started_at).getTime() : 0),
     revives: room.revives || 0,
     myContribution: me?.score ?? 0,
     partnerContribution: partner?.score ?? 0,
@@ -276,7 +297,9 @@ function summarize(room: DuoRoomState, userId: string): DuoCoopSummary {
 async function readRoom(supabase: SupabaseLike, roomId: string): Promise<DuoRoomState> {
   const { data: room, error } = await supabase
     .from("rooms")
-    .select("id, code, host_id, status, duration_s, started_at, ends_at, team_score, survived_ms, revives")
+    .select(
+      "id, code, host_id, status, duration_s, started_at, ends_at, team_score, survived_ms, revives",
+    )
     .eq("id", roomId)
     .maybeSingle();
   if (error) throw error;
@@ -284,7 +307,9 @@ async function readRoom(supabase: SupabaseLike, roomId: string): Promise<DuoRoom
 
   const { data: players, error: pErr } = await supabase
     .from("room_players")
-    .select("user_id, display_name, equipped_skin, score, is_host, finished, state, down_until, revives, last_seen")
+    .select(
+      "user_id, display_name, equipped_skin, score, is_host, finished, state, down_until, revives, last_seen",
+    )
     .eq("room_id", roomId)
     .order("is_host", { ascending: false });
   if (pErr) throw pErr;

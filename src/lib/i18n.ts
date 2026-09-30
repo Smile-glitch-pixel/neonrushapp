@@ -22,6 +22,13 @@ const DICT: Record<Lang, Dict> = {
     record: "Record",
     sound: "Son",
     muted: "Muet",
+    tutorialReplay: "Revoir le tutoriel",
+    tutorialTitle: "Première partie",
+    tutorialIntro: "Quelques gestes suffisent pour entrer dans le rush.",
+    tutorialMove: "Déplace ton vaisseau avec la souris, le doigt, WASD ou les flèches.",
+    tutorialCollect: "Récupère les orbes cyan et évite les pointes magenta.",
+    tutorialCombo: "Enchaîne les orbes sans interruption pour faire monter ton combo et ton score.",
+    tutorialContinue: "C'est parti !",
     menu: "Menu",
     mode: "Mode",
     skins: "Skins",
@@ -151,7 +158,8 @@ const DICT: Record<Lang, Dict> = {
     nickSave: "Valider",
     nickTaken: "Ce pseudo est déjà pris.",
     nickInvalid: "Pseudo invalide (3-20 caractères : lettres, chiffres, . _ -).",
-    nickGuestDesc: "Choisis un pseudo pour apparaître au classement mondial. Il est lié à cet appareil et te reste réservé.",
+    nickGuestDesc:
+      "Choisis un pseudo pour apparaître au classement mondial. Il est lié à cet appareil et te reste réservé.",
     guestTag: "invité",
     leaderboard: "Classement",
     top100: "Top 100 mondial",
@@ -222,7 +230,6 @@ const DICT: Record<Lang, Dict> = {
     duoDisconnected: "Déconnecté…",
     duoReconnecting: "Reconnexion…",
     duoTeamWipe: "Équipe éliminée",
-
   },
   en: {
     tagline: "Endless arcade",
@@ -238,6 +245,13 @@ const DICT: Record<Lang, Dict> = {
     record: "Record",
     sound: "Sound",
     muted: "Muted",
+    tutorialReplay: "Replay tutorial",
+    tutorialTitle: "First run",
+    tutorialIntro: "It only takes a few moves to get into the rush.",
+    tutorialMove: "Move your ship with the mouse, touch, WASD, or the arrow keys.",
+    tutorialCollect: "Collect cyan orbs and dodge magenta spikes.",
+    tutorialCombo: "Collect orbs without interruption to build your combo and score.",
+    tutorialContinue: "Let's go!",
     menu: "Menu",
     mode: "Mode",
     skins: "Skins",
@@ -367,7 +381,8 @@ const DICT: Record<Lang, Dict> = {
     nickSave: "Confirm",
     nickTaken: "This nickname is already taken.",
     nickInvalid: "Invalid nickname (3-20 chars: letters, digits, . _ -).",
-    nickGuestDesc: "Pick a nickname to appear on the global leaderboard. It is tied to this device and stays reserved for you.",
+    nickGuestDesc:
+      "Pick a nickname to appear on the global leaderboard. It is tied to this device and stays reserved for you.",
     guestTag: "guest",
     leaderboard: "Leaderboard",
     top100: "Global Top 100",
@@ -438,7 +453,6 @@ const DICT: Record<Lang, Dict> = {
     duoDisconnected: "Disconnected…",
     duoReconnecting: "Reconnecting…",
     duoTeamWipe: "Team wiped",
-
   },
   es: {
     tagline: "Arcade infinito",
@@ -454,6 +468,13 @@ const DICT: Record<Lang, Dict> = {
     record: "Récord",
     sound: "Sonido",
     muted: "Silencio",
+    tutorialReplay: "Ver el tutorial",
+    tutorialTitle: "Primera partida",
+    tutorialIntro: "Solo necesitas unos movimientos para entrar en acción.",
+    tutorialMove: "Mueve tu nave con el ratón, el dedo, WASD o las flechas.",
+    tutorialCollect: "Recoge orbes cian y esquiva los picos magenta.",
+    tutorialCombo: "Encadena orbes sin interrupciones para aumentar el combo y la puntuación.",
+    tutorialContinue: "¡A jugar!",
     menu: "Menú",
     mode: "Modo",
     skins: "Skins",
@@ -583,7 +604,8 @@ const DICT: Record<Lang, Dict> = {
     nickSave: "Confirmar",
     nickTaken: "Este apodo ya está en uso.",
     nickInvalid: "Apodo no válido (3-20 caracteres: letras, números, . _ -).",
-    nickGuestDesc: "Elige un apodo para aparecer en la clasificación mundial. Está vinculado a este dispositivo y queda reservado para ti.",
+    nickGuestDesc:
+      "Elige un apodo para aparecer en la clasificación mundial. Está vinculado a este dispositivo y queda reservado para ti.",
     guestTag: "invitado",
     leaderboard: "Clasificación",
     top100: "Top 100 mundial",
@@ -654,7 +676,6 @@ const DICT: Record<Lang, Dict> = {
     duoDisconnected: "Desconectado…",
     duoReconnecting: "Reconectando…",
     duoTeamWipe: "Equipo eliminado",
-
   },
 };
 

@@ -37,9 +37,22 @@ export function useNotifications(max = 4) {
       const kind = opts?.kind ?? "info";
       const id = idRef.current++;
       const ttl = opts?.ttl ?? DEFAULT_TTL[kind];
-      setList((l) => [...l.slice(-(max - 1)), { id, text, kind, ttl, ...(opts?.icon ? { icon: opts.icon } : {}), ...(opts?.color ? { color: opts.color } : {}) }]);
+      setList((l) => [
+        ...l.slice(-(max - 1)),
+        {
+          id,
+          text,
+          kind,
+          ttl,
+          ...(opts?.icon ? { icon: opts.icon } : {}),
+          ...(opts?.color ? { color: opts.color } : {}),
+        },
+      ]);
       if (ttl > 0) {
-        const t = window.setTimeout(() => { timers.current.delete(t); dismiss(id); }, ttl);
+        const t = window.setTimeout(() => {
+          timers.current.delete(t);
+          dismiss(id);
+        }, ttl);
         timers.current.add(t);
       }
       return id;
@@ -53,7 +66,13 @@ export function useNotifications(max = 4) {
     setList([]);
   }, []);
 
-  useEffect(() => () => { timers.current.forEach((t) => window.clearTimeout(t)); timers.current.clear(); }, []);
+  useEffect(
+    () => () => {
+      timers.current.forEach((t) => window.clearTimeout(t));
+      timers.current.clear();
+    },
+    [],
+  );
 
   return { list, notify, dismiss, clear };
 }

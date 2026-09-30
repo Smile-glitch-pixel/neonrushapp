@@ -29,31 +29,48 @@ export function useBadges(scope: string | null, signals: Record<string, BadgeSig
     setReady(true);
   }, [storeKey]);
 
-  const persist = useCallback((next: Record<string, string>) => {
-    setSeen(next);
-    try { window.localStorage.setItem(storeKey, JSON.stringify(next)); } catch { /* noop */ }
-  }, [storeKey]);
+  const persist = useCallback(
+    (next: Record<string, string>) => {
+      setSeen(next);
+      try {
+        window.localStorage.setItem(storeKey, JSON.stringify(next));
+      } catch {
+        /* noop */
+      }
+    },
+    [storeKey],
+  );
 
   /** Badge à afficher pour cette clé (null = rien à signaler). */
-  const badge = useCallback((key: string): { count: number } | null => {
-    if (!ready) return null;
-    const s = signals[key];
-    if (!s || !s.sig) return null;
-    if (seen[key] === s.sig) return null;
-    return { count: s.count ?? 0 };
-  }, [ready, seen, signals]);
+  const badge = useCallback(
+    (key: string): { count: number } | null => {
+      if (!ready) return null;
+      const s = signals[key];
+      if (!s || !s.sig) return null;
+      if (seen[key] === s.sig) return null;
+      return { count: s.count ?? 0 };
+    },
+    [ready, seen, signals],
+  );
 
   /** Le joueur a consulté cet onglet : on éteint le badge. */
-  const markSeen = useCallback((key: string) => {
-    const s = signals[key];
-    const sig = s?.sig ?? "";
-    setSeen((prev) => {
-      if (prev[key] === sig) return prev;
-      const next = { ...prev, [key]: sig };
-      try { window.localStorage.setItem(storeKey, JSON.stringify(next)); } catch { /* noop */ }
-      return next;
-    });
-  }, [signals, storeKey]);
+  const markSeen = useCallback(
+    (key: string) => {
+      const s = signals[key];
+      const sig = s?.sig ?? "";
+      setSeen((prev) => {
+        if (prev[key] === sig) return prev;
+        const next = { ...prev, [key]: sig };
+        try {
+          window.localStorage.setItem(storeKey, JSON.stringify(next));
+        } catch {
+          /* noop */
+        }
+        return next;
+      });
+    },
+    [signals, storeKey],
+  );
 
   const anyBadge = useMemo(
     () => Object.keys(signals).some((k) => badge(k) !== null),

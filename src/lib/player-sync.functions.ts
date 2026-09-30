@@ -44,9 +44,8 @@ export const pushPlayerState = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input: unknown) => StateSchema.parse(input))
   .handler(async ({ data, context }) => {
-    const { error } = await context.supabase
-      .from("player_state")
-      .upsert({
+    const { error } = await context.supabase.from("player_state").upsert(
+      {
         user_id: context.userId,
         coins: data.coins,
         xp: data.xp,
@@ -63,7 +62,9 @@ export const pushPlayerState = createServerFn({ method: "POST" })
         missions: (data.missions ?? {}) as never,
         pass_claimed: (data.pass_claimed ?? []) as never,
         settings: (data.settings ?? {}) as never,
-      }, { onConflict: "user_id" });
+      },
+      { onConflict: "user_id" },
+    );
     if (error) throw error;
     return { ok: true };
   });

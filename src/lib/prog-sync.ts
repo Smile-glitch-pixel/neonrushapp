@@ -18,8 +18,13 @@ export type RemoteState = {
   missions?: MissionsData | null;
   pass_claimed?: number[] | null;
   settings?: Record<string, unknown> & {
-    missions?: MissionsData; displayName?: string; duoBest?: number; duoRevives?: number;
-    loadout?: string[]; chestDay?: string; chestUsed?: number;
+    missions?: MissionsData;
+    displayName?: string;
+    duoBest?: number;
+    duoRevives?: number;
+    loadout?: string[];
+    chestDay?: string;
+    chestUsed?: number;
   };
 };
 
@@ -32,10 +37,15 @@ const mergeNumberMap = (
   return out;
 };
 
-export const mergeProg = (local: Progression, remote: RemoteState | null | undefined): Progression => {
+export const mergeProg = (
+  local: Progression,
+  remote: RemoteState | null | undefined,
+): Progression => {
   if (!remote) return local;
   const owned = Array.from(new Set([...local.owned, ...(remote.owned as SkinId[])])) as SkinId[];
-  const claimed = Array.from(new Set([...local.claimed, ...remote.claimed, ...(remote.pass_claimed ?? [])]));
+  const claimed = Array.from(
+    new Set([...local.claimed, ...remote.claimed, ...(remote.pass_claimed ?? [])]),
+  );
   const bestByMode: Progression["bestByMode"] = {
     classic: Math.max(local.bestByMode.classic || 0, remote.best_by_mode.classic || 0),
     hardcore: Math.max(local.bestByMode.hardcore || 0, remote.best_by_mode.hardcore || 0),
@@ -51,7 +61,11 @@ export const mergeProg = (local: Progression, remote: RemoteState | null | undef
       list: l.list.map((li) => {
         const ri = r.list.find((x) => x.id === li.id);
         if (!ri) return li;
-        return { id: li.id, progress: Math.max(li.progress, ri.progress), claimed: li.claimed || ri.claimed };
+        return {
+          id: li.id,
+          progress: Math.max(li.progress, ri.progress),
+          claimed: li.claimed || ri.claimed,
+        };
       }),
     };
   };
@@ -76,7 +90,9 @@ export const mergeProg = (local: Progression, remote: RemoteState | null | undef
     level: Math.max(levelFromXp(xp), local.level ?? 1, remote.level ?? 1),
     claimed,
     owned,
-    equipped: (owned.includes(remote.equipped as SkinId) ? remote.equipped : local.equipped) as SkinId,
+    equipped: (owned.includes(remote.equipped as SkinId)
+      ? remote.equipped
+      : local.equipped) as SkinId,
     bestByMode,
     missions,
     inventory: { coinChests: inv.coinChests ?? 0, gemChests: inv.gemChests ?? 0 },
@@ -88,9 +104,11 @@ export const mergeProg = (local: Progression, remote: RemoteState | null | undef
     chestUsed:
       remote.settings?.chestDay && remote.settings.chestDay === local.chestDay
         ? Math.max(local.chestUsed ?? 0, remote.settings.chestUsed ?? 0)
-        : (remote.settings?.chestDay && remote.settings.chestDay !== local.chestDay
-            ? (local.chestDay ? (local.chestUsed ?? 0) : (remote.settings.chestUsed ?? 0))
-            : local.chestUsed ?? 0),
+        : remote.settings?.chestDay && remote.settings.chestDay !== local.chestDay
+          ? local.chestDay
+            ? (local.chestUsed ?? 0)
+            : (remote.settings.chestUsed ?? 0)
+          : (local.chestUsed ?? 0),
     displayName: remote.settings?.displayName || local.displayName,
     duoBest: Math.max(local.duoBest ?? 0, remote.settings?.duoBest ?? 0),
     duoRevives: Math.max(local.duoRevives ?? 0, remote.settings?.duoRevives ?? 0),
@@ -113,7 +131,12 @@ export const progToRemote = (p: Progression): RemoteState => ({
   missions: p.missions,
   pass_claimed: p.claimed,
   settings: {
-    missions: p.missions, displayName: p.displayName, duoBest: p.duoBest ?? 0, duoRevives: p.duoRevives ?? 0,
-    loadout: p.loadout ?? [], chestDay: p.chestDay, chestUsed: p.chestUsed ?? 0,
+    missions: p.missions,
+    displayName: p.displayName,
+    duoBest: p.duoBest ?? 0,
+    duoRevives: p.duoRevives ?? 0,
+    loadout: p.loadout ?? [],
+    chestDay: p.chestDay,
+    chestUsed: p.chestUsed ?? 0,
   },
 });

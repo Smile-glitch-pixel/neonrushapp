@@ -1,24 +1,82 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
+import {
+  Award,
+  Crown,
+  Gamepad2,
+  Globe2,
+  Handshake,
+  HelpCircle,
+  Medal,
+  Play,
+  RotateCcw,
+  Settings2,
+  Share2,
+  ShoppingBag,
+  Sparkles,
+  Target,
+  UsersRound,
+  Zap,
+} from "lucide-react";
 import { LANGS, type Lang, t } from "@/lib/i18n";
 import {
-  MODES, SKINS, PASS_TIERS, PASS_XP_PER_TIER, PASS_REWARDS, REWARD_MULT, rankFor,
-  loadProg, saveProg, defaultProg, refreshMissionsIfNeeded, findTemplate,
-  RARITY_FX, RARITY_COLOR, rollChestReward, CHEST_COST, RANKS,
-  type GameMode, type Progression, type SkinId, type MissionStat, type Rarity,
+  MODES,
+  SKINS,
+  PASS_TIERS,
+  PASS_XP_PER_TIER,
+  PASS_REWARDS,
+  REWARD_MULT,
+  rankFor,
+  loadProg,
+  saveProg,
+  defaultProg,
+  refreshMissionsIfNeeded,
+  findTemplate,
+  RARITY_FX,
+  RARITY_COLOR,
+  rollChestReward,
+  CHEST_COST,
+  RANKS,
+  type GameMode,
+  type Progression,
+  type SkinId,
+  type MissionStat,
+  type Rarity,
 } from "@/lib/neon-progression";
 import { supabase } from "@/integrations/supabase/client";
 import { pullPlayerState, pushPlayerState } from "@/lib/player-sync.functions";
 import { useDuo } from "@/hooks/useDuo";
 import DuoLobby from "@/components/DuoLobby";
 import { mergeProg, progToRemote } from "@/lib/prog-sync";
-import { submitScore, fetchLeaderboard, fetchMyRank, fetchMyBests } from "@/lib/leaderboard.functions";
-import { getMyProfile, setDisplayName, NAME_RE } from "@/lib/profile.functions";
-import { POWERS, POWER_MAP, POWER_IDS, rollPower, emptyTimers, type PowerId, type PowerTimers } from "@/lib/powerups";
 import {
-  PERKS, MAX_LOADOUT, findPerk, perkUnlocked, perkKey, buildLoadout, emptyLoadout,
-  DAILY_CHEST_LIMIT, chestDayKey, msUntilChestReset, type Loadout,
+  submitScore,
+  fetchLeaderboard,
+  fetchMyRank,
+  fetchMyBests,
+} from "@/lib/leaderboard.functions";
+import { getMyProfile, setDisplayName, NAME_RE } from "@/lib/profile.functions";
+import {
+  POWERS,
+  POWER_MAP,
+  POWER_IDS,
+  rollPower,
+  emptyTimers,
+  type PowerId,
+  type PowerTimers,
+} from "@/lib/powerups";
+import {
+  PERKS,
+  MAX_LOADOUT,
+  findPerk,
+  perkUnlocked,
+  perkKey,
+  buildLoadout,
+  emptyLoadout,
+  DAILY_CHEST_LIMIT,
+  chestDayKey,
+  msUntilChestReset,
+  type Loadout,
 } from "@/lib/perks";
 import { useNotifications } from "@/hooks/useNotifications";
 import NeonNotifications from "@/components/NeonNotifications";
@@ -51,18 +109,25 @@ class AudioEngine {
   muted = false;
   private musicTimer: number | null = null;
   private step = 0;
+  private nextMusicTime = 0;
+  private starting: Promise<void> | null = null;
 
   ensure() {
     if (this.ctx) return;
     const AC =
-      (window as unknown as { AudioContext: typeof AudioContext; webkitAudioContext?: typeof AudioContext }).AudioContext ||
+      (
+        window as unknown as {
+          AudioContext: typeof AudioContext;
+          webkitAudioContext?: typeof AudioContext;
+        }
+      ).AudioContext ||
       (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
     this.ctx = new AC();
     this.master = this.ctx.createGain();
-    this.master.gain.value = 0.7;
+    this.master.gain.value = 0.9;
     this.master.connect(this.ctx.destination);
     this.musicGain = this.ctx.createGain();
-    this.musicGain.gain.value = 0.22;
+    this.musicGain.gain.value = 0.42;
     this.musicGain.connect(this.master);
     this.sfxGain = this.ctx.createGain();
     this.sfxGain.gain.value = 0.5;
@@ -71,29 +136,112 @@ class AudioEngine {
   async start() {
     this.ensure();
     if (!this.ctx) return;
-    if (this.ctx.state === "suspended") await this.ctx.resume();
-    if (!this.started) { this.started = true; this.scheduleMusic(); }
+    if (this.started) {
+      if (this.ctx.state === "suspended") await this.ctx.resume();
+      return;
+    }
+    if (this.starting) return this.starting;
+    this.starting = (async () => {
+      if (this.ctx?.state === "suspended") await this.ctx.resume();
+      if (!this.started) {
+        this.started = true;
+        this.scheduleMusic();
+      }
+    })();
+    try {
+      await this.starting;
+    } finally {
+      this.starting = null;
+    }
   }
-  setMuted(m: boolean) { this.muted = m; if (this.master) this.master.gain.value = m ? 0 : 0.7; }
+  setMuted(m: boolean) {
+    this.muted = m;
+    if (this.master) this.master.gain.value = m ? 0 : 0.9;
+  }
   private scheduleMusic() {
     if (!this.ctx || !this.musicGain) return;
-    const scale = [0, 3, 5, 7, 10, 12, 15];
-    const root = 55;
-    const tick = () => {
+    const sixteenth = 60 / 120 / 4;
+    const roots = [110, 87.31, 130.81, 98];
+    const hook = [12, 15, 19, 22, 24, 22, 19, 15, 12, 15, 19, 24, 22, 19, 15, 10];
+    const scheduler = () => {
       if (!this.ctx || !this.musicGain) return;
-      const tt = this.ctx.currentTime;
-      this.playTone({ freq: root * Math.pow(2, scale[this.step % scale.length] / 12) / 2, dur: 0.28, type: "sawtooth", gain: 0.25, dest: this.musicGain, at: tt, filter: 500 });
-      if (this.step % 2 === 0) {
-        const n = scale[(this.step * 3 + 2) % scale.length];
-        this.playTone({ freq: root * 4 * Math.pow(2, n / 12), dur: 0.18, type: "triangle", gain: 0.08, dest: this.musicGain, at: tt + 0.06 });
+      const horizon = this.ctx.currentTime + 0.12;
+      while (this.nextMusicTime < horizon) {
+        const at = this.nextMusicTime;
+        const beat = this.step % 16;
+        const bar = Math.floor(this.step / 16);
+        const root = roots[bar % roots.length];
+        const note = hook[beat];
+
+        if (beat % 4 === 0) {
+          this.playTone({
+            freq: root / 2,
+            dur: 0.34,
+            type: "triangle",
+            gain: 0.24,
+            dest: this.musicGain,
+            at,
+            filter: 320,
+          });
+          this.playTone({
+            freq: root,
+            dur: beat === 0 ? 1.35 : 0.25,
+            type: "sine",
+            gain: beat === 0 ? 0.045 : 0.025,
+            dest: this.musicGain,
+            at,
+            filter: 700,
+          });
+        }
+
+        if ([0, 3, 6, 8, 11, 14].includes(beat)) {
+          const octave = beat === 0 || beat === 8 ? 2 : 3;
+          this.playTone({
+            freq: root * Math.pow(2, octave) * Math.pow(2, note / 12),
+            dur: beat % 4 === 3 ? 0.16 : 0.22,
+            type: "triangle",
+            gain: beat === 0 || beat === 8 ? 0.105 : 0.075,
+            dest: this.musicGain,
+            at,
+            filter: 2600,
+          });
+        }
+
+        if (beat === 0 || beat === 8) {
+          this.playTone({
+            freq: 125,
+            dur: 0.16,
+            type: "sine",
+            gain: 0.28,
+            dest: this.musicGain,
+            at,
+            slideTo: 42,
+            filter: 500,
+          });
+        } else if (beat === 4 || beat === 12) {
+          this.noiseHit(0.09, 0.09, this.musicGain, at);
+        } else if (beat % 4 === 2) {
+          this.noiseHit(0.025, 0.025, this.musicGain, at);
+        }
+
+        this.step++;
+        this.nextMusicTime += sixteenth;
       }
-      this.noiseHit(0.03, 0.04, this.musicGain, tt + 0.12);
-      this.step++;
     };
-    tick();
-    this.musicTimer = window.setInterval(tick, 260);
+    this.nextMusicTime = this.ctx.currentTime + 0.04;
+    scheduler();
+    this.musicTimer = window.setInterval(scheduler, 25);
   }
-  private playTone(o: { freq: number; dur: number; type?: OscillatorType; gain?: number; dest?: AudioNode; at?: number; filter?: number; slideTo?: number; }) {
+  private playTone(o: {
+    freq: number;
+    dur: number;
+    type?: OscillatorType;
+    gain?: number;
+    dest?: AudioNode;
+    at?: number;
+    filter?: number;
+    slideTo?: number;
+  }) {
     if (!this.ctx) return;
     const tt = o.at ?? this.ctx.currentTime;
     const osc = this.ctx.createOscillator();
@@ -106,33 +254,62 @@ class AudioEngine {
     g.gain.exponentialRampToValueAtTime(0.0001, tt + o.dur);
     if (o.filter) {
       const f = this.ctx.createBiquadFilter();
-      f.type = "lowpass"; f.frequency.value = o.filter;
-      osc.connect(f); f.connect(g);
-    } else { osc.connect(g); }
+      f.type = "lowpass";
+      f.frequency.value = o.filter;
+      osc.connect(f);
+      f.connect(g);
+    } else {
+      osc.connect(g);
+    }
     g.connect(o.dest ?? this.sfxGain ?? this.master!);
-    osc.start(tt); osc.stop(tt + o.dur + 0.02);
+    osc.start(tt);
+    osc.stop(tt + o.dur + 0.02);
   }
   private noiseHit(dur: number, gain: number, dest: AudioNode, at?: number) {
     if (!this.ctx) return;
     const tt = at ?? this.ctx.currentTime;
-    const buffer = this.ctx.createBuffer(1, Math.floor(this.ctx.sampleRate * dur), this.ctx.sampleRate);
+    const buffer = this.ctx.createBuffer(
+      1,
+      Math.floor(this.ctx.sampleRate * dur),
+      this.ctx.sampleRate,
+    );
     const data = buffer.getChannelData(0);
     for (let i = 0; i < data.length; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / data.length);
-    const src = this.ctx.createBufferSource(); src.buffer = buffer;
-    const hp = this.ctx.createBiquadFilter(); hp.type = "highpass"; hp.frequency.value = 6000;
-    const g = this.ctx.createGain(); g.gain.value = gain;
-    src.connect(hp); hp.connect(g); g.connect(dest); src.start(tt);
+    const src = this.ctx.createBufferSource();
+    src.buffer = buffer;
+    const hp = this.ctx.createBiquadFilter();
+    hp.type = "highpass";
+    hp.frequency.value = 6000;
+    const g = this.ctx.createGain();
+    g.gain.value = gain;
+    src.connect(hp);
+    hp.connect(g);
+    g.connect(dest);
+    src.start(tt);
   }
   pickup(combo: number) {
     if (!this.ctx) return;
     const base = 660 + Math.min(combo, 20) * 40;
     this.playTone({ freq: base, dur: 0.12, type: "triangle", gain: 0.25 });
-    this.playTone({ freq: base * 1.5, dur: 0.14, type: "sine", gain: 0.18, at: this.ctx.currentTime + 0.02 });
+    this.playTone({
+      freq: base * 1.5,
+      dur: 0.14,
+      type: "sine",
+      gain: 0.18,
+      at: this.ctx.currentTime + 0.02,
+    });
   }
   power() {
     if (!this.ctx) return;
     const tt = this.ctx.currentTime;
-    for (let i = 0; i < 6; i++) this.playTone({ freq: 300 + i * 180, dur: 0.09, type: "square", gain: 0.15, at: tt + i * 0.04 });
+    for (let i = 0; i < 6; i++)
+      this.playTone({
+        freq: 300 + i * 180,
+        dur: 0.09,
+        type: "square",
+        gain: 0.15,
+        at: tt + i * 0.04,
+      });
   }
   legendarySound() {
     if (!this.ctx) return;
@@ -154,7 +331,13 @@ class AudioEngine {
     const notes = [523, 659, 784, 1046, 1318, 1568, 2093];
     notes.forEach((f, i) => {
       this.playTone({ freq: f, dur: 0.6, type: "sine", gain: 0.22, at: tt + 0.15 + i * 0.09 });
-      this.playTone({ freq: f * 1.5, dur: 0.4, type: "triangle", gain: 0.12, at: tt + 0.2 + i * 0.09 });
+      this.playTone({
+        freq: f * 1.5,
+        dur: 0.4,
+        type: "triangle",
+        gain: 0.12,
+        at: tt + 0.2 + i * 0.09,
+      });
     });
     // Bell hits
     [0.1, 0.55, 1.0].forEach((d) => {
@@ -171,7 +354,9 @@ class AudioEngine {
   gameover() {
     if (!this.ctx) return;
     const tt = this.ctx.currentTime;
-    [440, 330, 262, 196].forEach((f, i) => this.playTone({ freq: f, dur: 0.35, type: "sawtooth", gain: 0.25, at: tt + i * 0.12 }));
+    [440, 330, 262, 196].forEach((f, i) =>
+      this.playTone({ freq: f, dur: 0.35, type: "sawtooth", gain: 0.25, at: tt + i * 0.12 }),
+    );
   }
   /** Power-up spécifique : timbre différent selon l'identité */
   powerUp(id: string) {
@@ -186,7 +371,13 @@ class AudioEngine {
       second: [262, 392, 523, 784, 1046],
     };
     (map[id] ?? [440, 660]).forEach((f, i) =>
-      this.playTone({ freq: f, dur: 0.16, type: id === "boost" ? "square" : "triangle", gain: 0.22, at: tt + i * 0.05 }),
+      this.playTone({
+        freq: f,
+        dur: 0.16,
+        type: id === "boost" ? "square" : "triangle",
+        gain: 0.22,
+        at: tt + i * 0.05,
+      }),
     );
   }
   /** Fin d'un effet : descente courte */
@@ -215,30 +406,106 @@ class AudioEngine {
     if (!this.ctx) return;
     const tt = this.ctx.currentTime;
     this.playTone({ freq: 110, dur: 0.5, type: "sawtooth", gain: 0.3, filter: 600 });
-    [523, 784, 1046, 1568].forEach((f, i) => this.playTone({ freq: f, dur: 0.45, type: "triangle", gain: 0.26, at: tt + 0.08 + i * 0.07 }));
+    [523, 784, 1046, 1568].forEach((f, i) =>
+      this.playTone({ freq: f, dur: 0.45, type: "triangle", gain: 0.26, at: tt + 0.08 + i * 0.07 }),
+    );
     this.noiseHit(0.35, 0.2, this.sfxGain ?? this.master!, tt);
   }
-  dispose() { if (this.musicTimer) clearInterval(this.musicTimer); this.musicTimer = null; this.ctx?.close(); this.ctx = null; this.started = false; }
+  dispose() {
+    if (this.musicTimer) clearInterval(this.musicTimer);
+    this.musicTimer = null;
+    this.ctx?.close();
+    this.ctx = null;
+    this.started = false;
+  }
 }
 
 /* ----------------------------- Types ----------------------------- */
 type Vec = { x: number; y: number };
 type Entity = Vec & {
-  vx: number; vy: number; r: number; life: number; maxLife: number;
+  vx: number;
+  vy: number;
+  r: number;
+  life: number;
+  maxLife: number;
   kind: "orb" | "hazard" | "power" | "particle";
   color: string;
   power?: PowerId;
-  angle?: number; spin?: number;
+  angle?: number;
+  spin?: number;
 };
 /** Onde de choc (activation, impact, réanimation) */
-type Wave = { x: number; y: number; r: number; maxR: number; life: number; maxLife: number; color: string; width: number };
+type Wave = {
+  x: number;
+  y: number;
+  r: number;
+  maxR: number;
+  life: number;
+  maxLife: number;
+  color: string;
+  width: number;
+};
 /** Texte flottant (score, combo, power-up) */
-type Popup = { x: number; y: number; text: string; life: number; maxLife: number; color: string; size: number; vy: number };
-const vibrate = (pattern: number | number[]) => { try { navigator.vibrate?.(pattern); } catch { /* noop */ } };
+type Popup = {
+  x: number;
+  y: number;
+  text: string;
+  life: number;
+  maxLife: number;
+  color: string;
+  size: number;
+  vy: number;
+};
+const vibrate = (pattern: number | number[]) => {
+  try {
+    navigator.vibrate?.(pattern);
+  } catch {
+    /* noop */
+  }
+};
 const rand = (a: number, b: number) => a + Math.random() * (b - a);
 const dist2 = (a: Vec, b: Vec) => (a.x - b.x) ** 2 + (a.y - b.y) ** 2;
+const tracePolygon = (
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  radius: number,
+  sides: number,
+  rotation = 0,
+) => {
+  ctx.beginPath();
+  for (let i = 0; i < sides; i++) {
+    const angle = rotation + (i / sides) * Math.PI * 2;
+    const px = x + Math.cos(angle) * radius;
+    const py = y + Math.sin(angle) * radius;
+    if (i === 0) ctx.moveTo(px, py);
+    else ctx.lineTo(px, py);
+  }
+  ctx.closePath();
+};
+const traceStar = (
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  outerRadius: number,
+  innerRadius: number,
+  points: number,
+  rotation = 0,
+) => {
+  ctx.beginPath();
+  for (let i = 0; i < points * 2; i++) {
+    const radius = i % 2 === 0 ? outerRadius : innerRadius;
+    const angle = rotation + (i / (points * 2)) * Math.PI * 2;
+    const px = x + Math.cos(angle) * radius;
+    const py = y + Math.sin(angle) * radius;
+    if (i === 0) ctx.moveTo(px, py);
+    else ctx.lineTo(px, py);
+  }
+  ctx.closePath();
+};
 
 const LANG_KEY = "neon-rush-lang";
+const TUTORIAL_KEY = "neon-rush-tutorial-seen";
 
 /* ----------------------------- Component ----------------------------- */
 export default function NeonRush() {
@@ -246,6 +513,9 @@ export default function NeonRush() {
   const audioRef = useRef<AudioEngine>(new AudioEngine());
 
   const [lang, setLang] = useState<Lang>("fr");
+  const [introVisible, setIntroVisible] = useState(true);
+  const [tutorialVisible, setTutorialVisible] = useState(false);
+  const tutorialPendingRef = useRef(false);
   const [prog, setProg] = useState<Progression>(() => defaultProg());
   const [mode, setMode] = useState<GameMode>("classic");
   const [running, setRunning] = useState(false);
@@ -254,14 +524,35 @@ export default function NeonRush() {
   const [combo, setCombo] = useState(0);
   const [muted, setMuted] = useState(false);
   const [timeLeft, setTimeLeft] = useState(0);
-  const [rewardEarned, setRewardEarned] = useState<{ coins: number; xp: number; skin?: SkinId } | null>(null);
+  const [rewardEarned, setRewardEarned] = useState<{
+    coins: number;
+    xp: number;
+    skin?: SkinId;
+  } | null>(null);
   const [toast, setToast] = useState<string>("");
-  const [panel, setPanel] = useState<null | "modes" | "skins" | "pass" | "ranked" | "settings" | "leaderboard" | "missions" | "duo" | "shop" | "perks">(null);
+  const [panel, setPanel] = useState<
+    | null
+    | "modes"
+    | "skins"
+    | "pass"
+    | "ranked"
+    | "settings"
+    | "leaderboard"
+    | "missions"
+    | "duo"
+    | "shop"
+    | "perks"
+  >(null);
   const [powers, setPowers] = useState<PowerTimers>(() => emptyTimers());
   const [secondCharges, setSecondCharges] = useState(0);
   const [countdown, setCountdown] = useState(0);
   const [recordFlash, setRecordFlash] = useState(false);
-  const [chestFx, setChestFx] = useState<null | { stage: "shake" | "reveal"; rarity: Rarity; name: string; colors: [string, string, string] }>(null);
+  const [chestFx, setChestFx] = useState<null | {
+    stage: "shake" | "reveal";
+    rarity: Rarity;
+    name: string;
+    colors: [string, string, string];
+  }>(null);
   const [reviveHold, setReviveHold] = useState(0); // 0..1
   const { list: notifs, notify, dismiss: dismissNotif, clear: clearNotifs } = useNotifications();
   const [user, setUser] = useState<{ id: string; email: string | null } | null>(null);
@@ -274,12 +565,58 @@ export default function NeonRush() {
   const fetchMyBestsFn = useServerFn(fetchMyBests);
   const pushTimer = useRef<number | null>(null);
 
+  const finishIntro = useCallback(() => {
+    setIntroVisible(false);
+    if (tutorialPendingRef.current) {
+      tutorialPendingRef.current = false;
+      setTutorialVisible(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    let tutorialSeen = false;
+    try {
+      tutorialSeen = localStorage.getItem(TUTORIAL_KEY) === "1";
+    } catch (error) {
+      console.error("Could not read the first-visit tutorial preference.", error);
+    }
+    tutorialPendingRef.current = !tutorialSeen;
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const timeout = window.setTimeout(finishIntro, reducedMotion ? 1200 : 4600);
+    return () => window.clearTimeout(timeout);
+  }, [finishIntro]);
+
+  useEffect(() => {
+    const startMusicOnFirstGesture = () => {
+      void audioRef.current.start().catch((error: unknown) => {
+        console.error("Could not start game audio after user interaction.", error);
+      });
+      window.removeEventListener("pointerdown", startMusicOnFirstGesture);
+      window.removeEventListener("keydown", startMusicOnFirstGesture);
+    };
+    window.addEventListener("pointerdown", startMusicOnFirstGesture);
+    window.addEventListener("keydown", startMusicOnFirstGesture);
+    return () => {
+      window.removeEventListener("pointerdown", startMusicOnFirstGesture);
+      window.removeEventListener("keydown", startMusicOnFirstGesture);
+    };
+  }, []);
 
   const passListRef = useRef<HTMLDivElement>(null);
   const [lbMode, setLbMode] = useState<GameMode>("classic");
-  type LbRow = { user_id: string; mode: string; score: number; display_name: string | null; equipped_skin: string | null };
+  type LbRow = {
+    user_id: string;
+    mode: string;
+    score: number;
+    display_name: string | null;
+    equipped_skin: string | null;
+  };
   const [lbRows, setLbRows] = useState<LbRow[]>([]);
-  const [myRank, setMyRank] = useState<{ score: number; rank: number | null; total: number } | null>(null);
+  const [myRank, setMyRank] = useState<{
+    score: number;
+    rank: number | null;
+    total: number;
+  } | null>(null);
   const [lbLoading, setLbLoading] = useState(false);
 
   // ---- DUO COOP (2 joueurs, une équipe, un objectif commun) ----
@@ -291,12 +628,14 @@ export default function NeonRush() {
     displayName: prog.displayName ?? null,
     equippedSkin: prog.equipped,
   });
-  const duoEndRef = useRef<(score: number) => void>(() => { /* set below */ });
-  const duoDownRef = useRef<() => void>(() => { /* set below */ });
+  const duoEndRef = useRef<(score: number) => void>(() => {
+    /* set below */
+  });
+  const duoDownRef = useRef<() => void>(() => {
+    /* set below */
+  });
   const duoDoneRef = useRef<string | null>(null);
   const duoRewardedRef = useRef<string | null>(null);
-
-
 
   // Progression : portée = APPAREIL (invité) quand personne n'est connecté, COMPTE sinon.
   const scope = user?.id ?? null;
@@ -304,27 +643,39 @@ export default function NeonRush() {
   const loadedRef = useRef<{ scope: string | null; epoch: number }>({ scope: null, epoch: 0 });
 
   useEffect(() => {
-    const l = (localStorage.getItem(LANG_KEY) as Lang) || (navigator.language.startsWith("es") ? "es" : navigator.language.startsWith("fr") ? "fr" : "en");
+    const l =
+      (localStorage.getItem(LANG_KEY) as Lang) ||
+      (navigator.language.startsWith("es")
+        ? "es"
+        : navigator.language.startsWith("fr")
+          ? "fr"
+          : "en");
     setLang(l);
     setProg(loadProg(null));
     setHydrated(true);
   }, []);
-  useEffect(() => { try { localStorage.setItem(LANG_KEY, lang); } catch { /* noop */ } }, [lang]);
+  useEffect(() => {
+    try {
+      localStorage.setItem(LANG_KEY, lang);
+    } catch {
+      /* noop */
+    }
+  }, [lang]);
   useEffect(() => {
     if (!hydrated) return;
     if (loadedRef.current.scope !== scope || loadedRef.current.epoch !== progEpoch) return;
     saveProg(prog, scope);
   }, [prog, hydrated, scope, progEpoch]);
 
-
   // Refresh missions when day/week rolls over (checked every minute)
   useEffect(() => {
     if (!hydrated) return;
-    const tick = () => setProg((p) => {
-      const next = refreshMissionsIfNeeded(p.missions);
-      if (next === p.missions) return p;
-      return { ...p, missions: next };
-    });
+    const tick = () =>
+      setProg((p) => {
+        const next = refreshMissionsIfNeeded(p.missions);
+        if (next === p.missions) return p;
+        return { ...p, missions: next };
+      });
     const id = window.setInterval(tick, 60_000);
     return () => window.clearInterval(id);
   }, [hydrated]);
@@ -333,32 +684,37 @@ export default function NeonRush() {
   // Per-run stats (orbs, powers, score, combo, hardcoreScore) use MAX(progress, thisRun)
   // so a mission target must be reached WITHIN A SINGLE RUN — not by adding up runs.
   // Cumulative stats (runs, blitzRuns) still add across the day/week.
-  const applyRunToMissions = useCallback((runStats: Partial<Record<MissionStat, number>>, finalMode: GameMode) => {
-    setProg((p) => {
-      const bump = (list: typeof p.missions.daily.list) => list.map((m) => {
-        if (m.claimed) return m;
-        const tpl = findTemplate(m.id);
-        if (!tpl) return m;
-        const v = runStats[tpl.stat];
-        if (v == null || v <= 0) return m;
-        if (tpl.stat === "blitzRuns" && finalMode !== "blitz") return m;
-        if (tpl.stat === "hardcoreScore" && finalMode !== "hardcore") return m;
-        const cumulative = tpl.stat === "runs" || tpl.stat === "blitzRuns";
-        const next = cumulative ? m.progress + v : Math.max(m.progress, v);
-        return { ...m, progress: Math.min(tpl.target, next) };
+  const applyRunToMissions = useCallback(
+    (runStats: Partial<Record<MissionStat, number>>, finalMode: GameMode) => {
+      setProg((p) => {
+        const bump = (list: typeof p.missions.daily.list) =>
+          list.map((m) => {
+            if (m.claimed) return m;
+            const tpl = findTemplate(m.id);
+            if (!tpl) return m;
+            const v = runStats[tpl.stat];
+            if (v == null || v <= 0) return m;
+            if (tpl.stat === "blitzRuns" && finalMode !== "blitz") return m;
+            if (tpl.stat === "hardcoreScore" && finalMode !== "hardcore") return m;
+            const cumulative = tpl.stat === "runs" || tpl.stat === "blitzRuns";
+            const next = cumulative ? m.progress + v : Math.max(m.progress, v);
+            return { ...m, progress: Math.min(tpl.target, next) };
+          });
+        return {
+          ...p,
+          missions: {
+            daily: { ...p.missions.daily, list: bump(p.missions.daily.list) },
+            weekly: { ...p.missions.weekly, list: bump(p.missions.weekly.list) },
+          },
+        };
       });
-      return {
-        ...p,
-        missions: {
-          daily: { ...p.missions.daily, list: bump(p.missions.daily.list) },
-          weekly: { ...p.missions.weekly, list: bump(p.missions.weekly.list) },
-        },
-      };
-    });
-  }, []);
+    },
+    [],
+  );
   const applyRunRef = useRef(applyRunToMissions);
-  useEffect(() => { applyRunRef.current = applyRunToMissions; }, [applyRunToMissions]);
-
+  useEffect(() => {
+    applyRunRef.current = applyRunToMissions;
+  }, [applyRunToMissions]);
 
   // Auth: track session
   useEffect(() => {
@@ -369,7 +725,9 @@ export default function NeonRush() {
     const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => {
       setUser(s ? { id: s.user.id, email: s.user.email ?? null } : null);
     });
-    return () => { sub.subscription.unsubscribe(); };
+    return () => {
+      sub.subscription.unsubscribe();
+    };
   }, []);
 
   // Changement de compte / déconnexion : on bascule IMMÉDIATEMENT sur la bonne progression
@@ -381,7 +739,10 @@ export default function NeonRush() {
     loadedRef.current = { scope, epoch: progEpoch + 1 };
     setProg(local);
     setProgEpoch((e) => e + 1);
-    if (pushTimer.current) { window.clearTimeout(pushTimer.current); pushTimer.current = null; }
+    if (pushTimer.current) {
+      window.clearTimeout(pushTimer.current);
+      pushTimer.current = null;
+    }
     if (!scope) return;
     let cancel = false;
     (async () => {
@@ -390,12 +751,18 @@ export default function NeonRush() {
         if (cancel) return;
         setProg((cur) => {
           const merged = mergeProg(cur, remote as never);
-          pushFn({ data: progToRemote(merged) }).catch(() => { /* noop */ });
+          pushFn({ data: progToRemote(merged) }).catch(() => {
+            /* noop */
+          });
           return merged;
         });
-      } catch { /* noop */ }
+      } catch {
+        /* noop */
+      }
     })();
-    return () => { cancel = true; };
+    return () => {
+      cancel = true;
+    };
   }, [scope, hydrated, progEpoch, pullFn, pushFn]);
 
   // Debounced push on prog changes when signed-in
@@ -404,11 +771,14 @@ export default function NeonRush() {
     if (loadedRef.current.scope !== scope || loadedRef.current.epoch !== progEpoch) return;
     if (pushTimer.current) window.clearTimeout(pushTimer.current);
     pushTimer.current = window.setTimeout(() => {
-      pushFn({ data: progToRemote(prog) }).catch(() => { /* noop */ });
+      pushFn({ data: progToRemote(prog) }).catch(() => {
+        /* noop */
+      });
     }, 900);
-    return () => { if (pushTimer.current) window.clearTimeout(pushTimer.current); };
+    return () => {
+      if (pushTimer.current) window.clearTimeout(pushTimer.current);
+    };
   }, [prog, user, hydrated, scope, progEpoch, pushFn]);
-
 
   // ---- PSEUDO OBLIGATOIRE (comptes ET invités) ----
   const getProfileFn = useServerFn(getMyProfile);
@@ -420,10 +790,15 @@ export default function NeonRush() {
   const [needNick, setNeedNick] = useState(false);
   /** Identifiant d'appareil stable (invités) : réserve le pseudo à vie. */
   const [deviceId, setDeviceId] = useState<string | null>(null);
-  useEffect(() => { setDeviceId(getDeviceId()); }, []);
+  useEffect(() => {
+    setDeviceId(getDeviceId());
+  }, []);
 
   useEffect(() => {
-    if (!user) { setProfileName(null); return; }
+    if (!user) {
+      setProfileName(null);
+      return;
+    }
     let cancel = false;
     (async () => {
       try {
@@ -435,10 +810,15 @@ export default function NeonRush() {
         const chosen = name && name !== emailLocal ? name : null;
         setProfileName(chosen);
         setNeedNick(!chosen);
-        if (chosen) setProg((pr) => (pr.displayName === chosen ? pr : { ...pr, displayName: chosen }));
-      } catch { /* noop */ }
+        if (chosen)
+          setProg((pr) => (pr.displayName === chosen ? pr : { ...pr, displayName: chosen }));
+      } catch {
+        /* noop */
+      }
     })();
-    return () => { cancel = true; };
+    return () => {
+      cancel = true;
+    };
   }, [user, getProfileFn]);
 
   // Invité : pseudo obligatoire lui aussi (sinon pas de classement possible).
@@ -448,30 +828,32 @@ export default function NeonRush() {
     setNeedNick(!(prog.displayName && NAME_RE.test(prog.displayName)));
   }, [user, hydrated, prog.displayName]);
 
-  const saveNickname = useCallback(async (raw: string) => {
-    const name = raw.trim();
-    if (!user) {
-      if (!deviceId) return { ok: false as const, reason: "INVALID" as const };
-      const r = await claimGuestNameFn({ data: { deviceId, name } });
+  const saveNickname = useCallback(
+    async (raw: string) => {
+      const name = raw.trim();
+      if (!user) {
+        if (!deviceId) return { ok: false as const, reason: "INVALID" as const };
+        const r = await claimGuestNameFn({ data: { deviceId, name } });
+        if (r.ok) {
+          setNeedNick(false);
+          setProg((p) => ({ ...p, displayName: name }));
+        }
+        return r;
+      }
+      const r = await setNameFn({ data: { name } });
       if (r.ok) {
+        setProfileName(r.name);
         setNeedNick(false);
-        setProg((p) => ({ ...p, displayName: name }));
+        setProg((p) => ({ ...p, displayName: r.name }));
       }
       return r;
-    }
-    const r = await setNameFn({ data: { name } });
-    if (r.ok) {
-      setProfileName(r.name);
-      setNeedNick(false);
-      setProg((p) => ({ ...p, displayName: r.name }));
-    }
-    return r;
-  }, [setNameFn, claimGuestNameFn, user, deviceId]);
+    },
+    [setNameFn, claimGuestNameFn, user, deviceId],
+  );
 
-  const signOut = async () => { await supabase.auth.signOut(); };
-
-
-
+  const signOut = async () => {
+    await supabase.auth.signOut();
+  };
 
   const tr = useCallback((k: string) => t(lang, k), [lang]);
 
@@ -482,68 +864,127 @@ export default function NeonRush() {
   const globalBest = Math.max(0, ...MODES.map((m) => prog.bestByMode[m.id] || 0));
   const rank = rankFor(globalBest);
 
-  const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(""), 2200); };
+  const showToast = (msg: string) => {
+    setToast(msg);
+    setTimeout(() => setToast(""), 2200);
+  };
 
   // Game state
   const stateRef = useRef({
     player: { x: 0, y: 0, r: 14, tx: 0, ty: 0, trail: [] as Vec[] },
-    entities: [] as Entity[], particles: [] as Entity[],
-    waves: [] as Wave[], popups: [] as Popup[],
-    t: 0, lastSpawn: 0, lastPower: 0, shake: 0,
-    combo: 0, comboTimer: 0, score: 0, maxCombo: 0,
+    entities: [] as Entity[],
+    particles: [] as Entity[],
+    waves: [] as Wave[],
+    popups: [] as Popup[],
+    t: 0,
+    lastSpawn: 0,
+    lastPower: 0,
+    shake: 0,
+    combo: 0,
+    comboTimer: 0,
+    score: 0,
+    maxCombo: 0,
     powers: emptyTimers(),
-    secondCharges: 0, invuln: 0,
+    secondCharges: 0,
+    invuln: 0,
     /** qualité adaptative des effets (1 = plein, 0.5 = mobile en difficulté) */
-    q: 1, fpsAcc: 0, fpsFrames: 0,
-    bestAtStart: 0, recordFired: false,
-    dpr: 1, w: 0, h: 0, over: false, running: false, difficulty: 1,
+    q: 1,
+    fpsAcc: 0,
+    fpsFrames: 0,
+    bestAtStart: 0,
+    recordFired: false,
+    dpr: 1,
+    w: 0,
+    h: 0,
+    over: false,
+    running: false,
+    difficulty: 1,
     mode: "classic" as GameMode,
     skinColors: equippedSkin.colors as [string, string, string],
     skinFx: equippedFx,
     skinRarity: equippedSkin.rarity as Rarity,
     duration: 0,
-    runOrbs: 0, runPowers: 0,
+    runOrbs: 0,
+    runPowers: 0,
     duo: false,
     lo: emptyLoadout() as Loadout,
   });
 
   const notifyRef = useRef(notify);
-  useEffect(() => { notifyRef.current = notify; }, [notify]);
+  useEffect(() => {
+    notifyRef.current = notify;
+  }, [notify]);
   const trRef = useRef((k: string) => t(lang, k));
-  useEffect(() => { trRef.current = (k: string) => t(lang, k); }, [lang]);
+  useEffect(() => {
+    trRef.current = (k: string) => t(lang, k);
+  }, [lang]);
 
-  const start = useCallback(async (m: GameMode, opts?: { duo?: boolean; durationMs?: number }) => {
-    await audioRef.current.start();
-    const s = stateRef.current;
-    s.entities = []; s.particles = []; s.waves = []; s.popups = [];
-    s.player.x = s.w / 2; s.player.y = s.h / 2;
-    s.player.tx = s.player.x; s.player.ty = s.player.y; s.player.trail = [];
-    s.t = 0; s.lastSpawn = 0; s.lastPower = 0;
-    s.combo = 0; s.comboTimer = 0; s.score = 0; s.shake = 0; s.maxCombo = 0;
-    s.runOrbs = 0; s.runPowers = 0;
-    s.powers = emptyTimers();
-    s.lo = buildLoadout(prog.loadout);
-    if (s.lo.startShield) s.powers.shield = 8000;
-    s.secondCharges = s.lo.secondWind ? 1 : 0; s.invuln = 0;
-    s.q = 1; s.fpsAcc = 0; s.fpsFrames = 0;
-    s.bestAtStart = prog.bestByMode[m] || 0; s.recordFired = false;
-    s.over = false; s.difficulty = m === "hardcore" ? 1.5 : 1;
-    s.mode = m;
-    s.duo = !!opts?.duo;
-    const sk = SKINS.find((k) => k.id === prog.equipped) || SKINS[0];
-    s.skinColors = sk.colors as [string, string, string];
-    s.skinFx = RARITY_FX[sk.rarity];
-    s.skinRarity = sk.rarity;
-    s.duration = opts?.durationMs ?? (m === "blitz" ? 60000 : 0);
-    setMode(m); setScore(0); setCombo(0);
-    setPowers({ ...s.powers }); setSecondCharges(s.secondCharges); setRecordFlash(false); setReviveHold(0);
-    clearNotifs();
-    setTimeLeft(s.duration > 0 ? Math.ceil(s.duration / 1000) : 0);
-    setGameOver(false); setRunning(true); setPanel(null); setRewardEarned(null);
-    // Compte à rebours arcade (le Duo démarre sur le chrono serveur, sans délai)
-    if (opts?.duo) { s.running = true; setCountdown(0); }
-    else { s.running = false; setCountdown(3); }
-  }, [prog.equipped, prog.bestByMode, prog.loadout, clearNotifs]);
+  const start = useCallback(
+    async (m: GameMode, opts?: { duo?: boolean; durationMs?: number }) => {
+      await audioRef.current.start();
+      const s = stateRef.current;
+      s.entities = [];
+      s.particles = [];
+      s.waves = [];
+      s.popups = [];
+      s.player.x = s.w / 2;
+      s.player.y = s.h / 2;
+      s.player.tx = s.player.x;
+      s.player.ty = s.player.y;
+      s.player.trail = [];
+      s.t = 0;
+      s.lastSpawn = 0;
+      s.lastPower = 0;
+      s.combo = 0;
+      s.comboTimer = 0;
+      s.score = 0;
+      s.shake = 0;
+      s.maxCombo = 0;
+      s.runOrbs = 0;
+      s.runPowers = 0;
+      s.powers = emptyTimers();
+      s.lo = buildLoadout(prog.loadout);
+      if (s.lo.startShield) s.powers.shield = 8000;
+      s.secondCharges = s.lo.secondWind ? 1 : 0;
+      s.invuln = 0;
+      s.q = 1;
+      s.fpsAcc = 0;
+      s.fpsFrames = 0;
+      s.bestAtStart = prog.bestByMode[m] || 0;
+      s.recordFired = false;
+      s.over = false;
+      s.difficulty = m === "hardcore" ? 1.5 : 1;
+      s.mode = m;
+      s.duo = !!opts?.duo;
+      const sk = SKINS.find((k) => k.id === prog.equipped) || SKINS[0];
+      s.skinColors = sk.colors as [string, string, string];
+      s.skinFx = RARITY_FX[sk.rarity];
+      s.skinRarity = sk.rarity;
+      s.duration = opts?.durationMs ?? (m === "blitz" ? 60000 : 0);
+      setMode(m);
+      setScore(0);
+      setCombo(0);
+      setPowers({ ...s.powers });
+      setSecondCharges(s.secondCharges);
+      setRecordFlash(false);
+      setReviveHold(0);
+      clearNotifs();
+      setTimeLeft(s.duration > 0 ? Math.ceil(s.duration / 1000) : 0);
+      setGameOver(false);
+      setRunning(true);
+      setPanel(null);
+      setRewardEarned(null);
+      // Compte à rebours arcade (le Duo démarre sur le chrono serveur, sans délai)
+      if (opts?.duo) {
+        s.running = true;
+        setCountdown(0);
+      } else {
+        s.running = false;
+        setCountdown(3);
+      }
+    },
+    [prog.equipped, prog.bestByMode, prog.loadout, clearNotifs],
+  );
 
   // Compte à rebours 3 · 2 · 1 · GO
   useEffect(() => {
@@ -554,7 +995,19 @@ export default function NeonRush() {
         const n = c - 1;
         if (n <= 0) {
           const s = stateRef.current;
-          if (!s.over) { s.running = true; s.waves.push({ x: s.w / 2, y: s.h / 2, r: 10, maxR: Math.max(s.w, s.h) * 0.7, life: 0, maxLife: 520, color: s.skinColors[1], width: 4 }); }
+          if (!s.over) {
+            s.running = true;
+            s.waves.push({
+              x: s.w / 2,
+              y: s.h / 2,
+              r: 10,
+              maxR: Math.max(s.w, s.h) * 0.7,
+              life: 0,
+              maxLife: 520,
+              color: s.skinColors[1],
+              width: 4,
+            });
+          }
           audioRef.current.countBeep(true);
         }
         return Math.max(0, n);
@@ -622,7 +1075,8 @@ export default function NeonRush() {
     const s = stateRef.current;
     if (meState === "alive" && !s.running && !s.over && duoDoneRef.current !== duo.room?.id) {
       s.entities = s.entities.filter((e) => e.kind !== "hazard");
-      s.powers.shield = (prog.loadout ?? []).includes("guardian") ? 6000 : 3000; setPowers({ ...s.powers });
+      s.powers.shield = (prog.loadout ?? []).includes("guardian") ? 6000 : 3000;
+      setPowers({ ...s.powers });
       s.running = true;
       setDuoDownMs(0);
       audioRef.current.power();
@@ -630,19 +1084,22 @@ export default function NeonRush() {
       showToast(tr("duoRevived"));
     }
     if (meState === "dead" && !s.over) {
-      s.over = true; s.running = false;
+      s.over = true;
+      s.running = false;
       duoEndRef.current(Math.floor(s.score));
     }
   }, [duoActive, meState, duo.room?.id, tr]);
 
   // Récompenses coop : basées sur la performance de l'ÉQUIPE (validées côté serveur)
   useEffect(() => {
-    const res = duo.result; const room = duo.room;
+    const res = duo.result;
+    const room = duo.room;
     if (!res || !room || !res.settled) return;
     if (duoRewardedRef.current === room.id) return;
     duoRewardedRef.current = room.id;
     const secs = Math.floor(res.survivedMs / 1000);
-    const coins = 100 + Math.floor(res.teamScore / 40) + res.revives * 40 + Math.floor(secs / 10) * 5;
+    const coins =
+      100 + Math.floor(res.teamScore / 40) + res.revives * 40 + Math.floor(secs / 10) * 5;
     const xp = 150 + Math.floor(res.teamScore / 25) + res.revives * 60 + Math.floor(secs / 10) * 8;
     setProg((p) => ({
       ...p,
@@ -651,27 +1108,36 @@ export default function NeonRush() {
       duoBest: Math.max(p.duoBest ?? 0, res.teamScore),
       duoRevives: (p.duoRevives ?? 0) + res.revives,
       stats: bumpStats(p.stats, {
-        duoRuns: 1, revives: res.revives, runs: 1,
-        orbs: stateRef.current.runOrbs || 0, powers: stateRef.current.runPowers || 0,
+        duoRuns: 1,
+        revives: res.revives,
+        runs: 1,
+        orbs: stateRef.current.runOrbs || 0,
+        powers: stateRef.current.runPowers || 0,
         bestCombo: stateRef.current.maxCombo,
       }),
     }));
     const s = stateRef.current;
-    applyRunRef.current({
-      runs: 1, blitzRuns: 0, score: res.teamScore, hardcoreScore: 0,
-      combo: s.maxCombo, orbs: s.runOrbs || 0, powers: s.runPowers || 0,
-    }, "classic");
+    applyRunRef.current(
+      {
+        runs: 1,
+        blitzRuns: 0,
+        score: res.teamScore,
+        hardcoreScore: 0,
+        combo: s.maxCombo,
+        orbs: s.runOrbs || 0,
+        powers: s.runPowers || 0,
+      },
+      "classic",
+    );
     setToast(`🤝 +${coins} 🪙 · +${xp} XP`);
     setTimeout(() => setToast(""), 2600);
   }, [duo.result, duo.room]);
 
-
-
-
-
   // Input — joystick virtuel (apparaît là où on appuie) + clavier WASD/flèches en parallèle
   const JOY_R = 58; // rayon du joystick en px écran
-  const joyRef = useRef<{ id: number; ox: number; oy: number; dx: number; dy: number } | null>(null);
+  const joyRef = useRef<{ id: number; ox: number; oy: number; dx: number; dy: number } | null>(
+    null,
+  );
   const [joy, setJoy] = useState<{ ox: number; oy: number; dx: number; dy: number } | null>(null);
 
   useEffect(() => {
@@ -689,14 +1155,25 @@ export default function NeonRush() {
     const onPointerDown = (e: PointerEvent) => {
       const { x, y, rect } = toGame(e.clientX, e.clientY);
       const onBall = Math.hypot(x - s.player.x, y - s.player.y) <= s.player.r + 20;
-      try { canvas.setPointerCapture(e.pointerId); } catch { /* noop */ }
+      try {
+        canvas.setPointerCapture(e.pointerId);
+      } catch {
+        /* noop */
+      }
       if (onBall) {
         // Appui directement sur la boule : glissement direct, pas de joystick
         dragRef.id = e.pointerId;
-        s.player.tx = x; s.player.ty = y;
+        s.player.tx = x;
+        s.player.ty = y;
         return;
       }
-      const j = { id: e.pointerId, ox: e.clientX - rect.left, oy: e.clientY - rect.top, dx: 0, dy: 0 };
+      const j = {
+        id: e.pointerId,
+        ox: e.clientX - rect.left,
+        oy: e.clientY - rect.top,
+        dx: 0,
+        dy: 0,
+      };
       joyRef.current = j;
       setJoy({ ox: j.ox, oy: j.oy, dx: 0, dy: 0 });
       if (e.pointerType !== "mouse") e.preventDefault();
@@ -706,8 +1183,13 @@ export default function NeonRush() {
       const last = events[events.length - 1];
       if (dragRef.id === e.pointerId) {
         const { x, y } = toGame(last.clientX, last.clientY);
-        s.player.tx = x; s.player.ty = y;
-        if (e.pointerType !== "mouse") { s.player.x = x; s.player.y = y; e.preventDefault(); }
+        s.player.tx = x;
+        s.player.ty = y;
+        if (e.pointerType !== "mouse") {
+          s.player.x = x;
+          s.player.y = y;
+          e.preventDefault();
+        }
         return;
       }
       const j = joyRef.current;
@@ -716,19 +1198,34 @@ export default function NeonRush() {
       let dx = last.clientX - rect.left - j.ox;
       let dy = last.clientY - rect.top - j.oy;
       const d = Math.hypot(dx, dy);
-      if (d > JOY_R) { dx = (dx / d) * JOY_R; dy = (dy / d) * JOY_R; }
-      j.dx = dx; j.dy = dy;
+      if (d > JOY_R) {
+        dx = (dx / d) * JOY_R;
+        dy = (dy / d) * JOY_R;
+      }
+      j.dx = dx;
+      j.dy = dy;
       setJoy({ ox: j.ox, oy: j.oy, dx, dy });
       if (e.pointerType !== "mouse") e.preventDefault();
     };
     const onPointerUp = (e: PointerEvent) => {
       if (dragRef.id === e.pointerId) dragRef.id = -1;
-      if (joyRef.current?.id === e.pointerId) { joyRef.current = null; setJoy(null); }
-      try { canvas.releasePointerCapture(e.pointerId); } catch { /* noop */ }
+      if (joyRef.current?.id === e.pointerId) {
+        joyRef.current = null;
+        setJoy(null);
+      }
+      try {
+        canvas.releasePointerCapture(e.pointerId);
+      } catch {
+        /* noop */
+      }
     };
     const keys: Record<string, boolean> = {};
-    const kd = (e: KeyboardEvent) => { keys[e.key.toLowerCase()] = true; };
-    const ku = (e: KeyboardEvent) => { keys[e.key.toLowerCase()] = false; };
+    const kd = (e: KeyboardEvent) => {
+      keys[e.key.toLowerCase()] = true;
+    };
+    const ku = (e: KeyboardEvent) => {
+      keys[e.key.toLowerCase()] = false;
+    };
     let raf = 0;
     const moveLoop = () => {
       const speed = 8;
@@ -771,20 +1268,24 @@ export default function NeonRush() {
     };
   }, []);
 
-
   // Resize
   useEffect(() => {
     const canvas = canvasRef.current!;
     const s = stateRef.current;
     const resize = () => {
       const dpr = Math.min(window.devicePixelRatio || 1, 2);
-      s.dpr = dpr; s.w = canvas.clientWidth; s.h = canvas.clientHeight;
-      canvas.width = s.w * dpr; canvas.height = s.h * dpr;
+      s.dpr = dpr;
+      s.w = canvas.clientWidth;
+      s.h = canvas.clientHeight;
+      canvas.width = s.w * dpr;
+      canvas.height = s.h * dpr;
       const ctx = canvas.getContext("2d")!;
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       if (s.player.x === 0 && s.player.y === 0) {
-        s.player.x = s.w / 2; s.player.y = s.h / 2;
-        s.player.tx = s.player.x; s.player.ty = s.player.y;
+        s.player.x = s.w / 2;
+        s.player.y = s.h / 2;
+        s.player.tx = s.player.x;
+        s.player.ty = s.player.y;
       }
     };
     resize();
@@ -793,54 +1294,76 @@ export default function NeonRush() {
   }, []);
 
   // End-of-run rewards. Skins are NO LONGER dropped from runs — chests + shop + BP only.
-  const finishRun = useCallback((finalScore: number, finalMode: GameMode, finalCombo: number) => {
-    const mult = REWARD_MULT[finalMode] ?? 1;
-    const earnedCoins = Math.floor((finalScore / 10) * mult);
-    const earnedXP = Math.floor((finalScore / 6) * mult);
-    setProg((p) => {
-      const bestByMode = { ...p.bestByMode, [finalMode]: Math.max(p.bestByMode[finalMode] || 0, finalScore) };
-      const st = stateRef.current;
-      return {
-        ...p, coins: p.coins + earnedCoins, xp: p.xp + earnedXP, bestByMode,
-        stats: bumpStats(p.stats, {
-          runs: 1, orbs: st.runOrbs || 0, powers: st.runPowers || 0,
-          bestScore: finalScore, bestCombo: finalCombo,
-        }),
-      };
-    });
-    setRewardEarned({ coins: earnedCoins, xp: earnedXP });
+  const finishRun = useCallback(
+    (finalScore: number, finalMode: GameMode, finalCombo: number) => {
+      const mult = REWARD_MULT[finalMode] ?? 1;
+      const earnedCoins = Math.floor((finalScore / 10) * mult);
+      const earnedXP = Math.floor((finalScore / 6) * mult);
+      setProg((p) => {
+        const bestByMode = {
+          ...p.bestByMode,
+          [finalMode]: Math.max(p.bestByMode[finalMode] || 0, finalScore),
+        };
+        const st = stateRef.current;
+        return {
+          ...p,
+          coins: p.coins + earnedCoins,
+          xp: p.xp + earnedXP,
+          bestByMode,
+          stats: bumpStats(p.stats, {
+            runs: 1,
+            orbs: st.runOrbs || 0,
+            powers: st.runPowers || 0,
+            bestScore: finalScore,
+            bestCombo: finalCombo,
+          }),
+        };
+      });
+      setRewardEarned({ coins: earnedCoins, xp: earnedXP });
 
-    // Missions: runs / score / combo (only if run wasn't quit early — Zen quits use gameOverNow too, we still count)
-    // Missions — everything counts WITHIN THIS RUN (per-run max), except runs/blitzRuns which stay cumulative
-    const s = stateRef.current;
-    applyRunRef.current({
-      runs: 1,
-      blitzRuns: finalMode === "blitz" ? 1 : 0,
-      score: finalScore,
-      hardcoreScore: finalMode === "hardcore" ? finalScore : 0,
-      combo: finalCombo,
-      orbs: s.runOrbs || 0,
-      powers: s.runPowers || 0,
-    }, finalMode);
+      // Missions: runs / score / combo (only if run wasn't quit early — Zen quits use gameOverNow too, we still count)
+      // Missions — everything counts WITHIN THIS RUN (per-run max), except runs/blitzRuns which stay cumulative
+      const s = stateRef.current;
+      applyRunRef.current(
+        {
+          runs: 1,
+          blitzRuns: finalMode === "blitz" ? 1 : 0,
+          score: finalScore,
+          hardcoreScore: finalMode === "hardcore" ? finalScore : 0,
+          combo: finalCombo,
+          orbs: s.runOrbs || 0,
+          powers: s.runPowers || 0,
+        },
+        finalMode,
+      );
 
-    // Classement mondial : comptes ET invités (pseudo obligatoire dans les deux cas)
-    if (user && finalScore > 0) {
-      submitScoreFn({ data: {
-        mode: finalMode,
-        score: finalScore,
-        display_name: prog.displayName ?? null,
-        equipped_skin: prog.equipped,
-      } }).catch(() => { /* noop */ });
-    } else if (!user && finalScore > 0 && deviceId && prog.displayName && finalMode !== "zen") {
-      guestSubmitFn({ data: {
-        deviceId,
-        mode: finalMode as "classic" | "hardcore" | "blitz",
-        score: finalScore,
-        skin: prog.equipped,
-      } }).catch(() => { /* noop */ });
-    }
-  }, [prog.displayName, prog.equipped, user, submitScoreFn, deviceId, guestSubmitFn]);
-
+      // Classement mondial : comptes ET invités (pseudo obligatoire dans les deux cas)
+      if (user && finalScore > 0) {
+        submitScoreFn({
+          data: {
+            mode: finalMode,
+            score: finalScore,
+            display_name: prog.displayName ?? null,
+            equipped_skin: prog.equipped,
+          },
+        }).catch(() => {
+          /* noop */
+        });
+      } else if (!user && finalScore > 0 && deviceId && prog.displayName && finalMode !== "zen") {
+        guestSubmitFn({
+          data: {
+            deviceId,
+            mode: finalMode as "classic" | "hardcore" | "blitz",
+            score: finalScore,
+            skin: prog.equipped,
+          },
+        }).catch(() => {
+          /* noop */
+        });
+      }
+    },
+    [prog.displayName, prog.equipped, user, submitScoreFn, deviceId, guestSubmitFn],
+  );
 
   // Main loop
   useEffect(() => {
@@ -852,32 +1375,57 @@ export default function NeonRush() {
 
     const spawn = () => {
       const edge = Math.floor(Math.random() * 4);
-      let x = 0, y = 0;
-      if (edge === 0) { x = -20; y = Math.random() * s.h; }
-      else if (edge === 1) { x = s.w + 20; y = Math.random() * s.h; }
-      else if (edge === 2) { x = Math.random() * s.w; y = -20; }
-      else { x = Math.random() * s.w; y = s.h + 20; }
+      let x = 0,
+        y = 0;
+      if (edge === 0) {
+        x = -20;
+        y = Math.random() * s.h;
+      } else if (edge === 1) {
+        x = s.w + 20;
+        y = Math.random() * s.h;
+      } else if (edge === 2) {
+        x = Math.random() * s.w;
+        y = -20;
+      } else {
+        x = Math.random() * s.w;
+        y = s.h + 20;
+      }
       const towards = { x: s.w / 2 + rand(-100, 100), y: s.h / 2 + rand(-100, 100) };
-      const dx = towards.x - x, dy = towards.y - y;
+      const dx = towards.x - x,
+        dy = towards.y - y;
       const len = Math.hypot(dx, dy) || 1;
       const speed = rand(1.2, 2.4) * s.difficulty;
       const hazardChance = s.mode === "hardcore" ? 0.55 : 0.32;
       const isHazard = Math.random() < hazardChance;
       s.entities.push({
-        x, y, vx: (dx / len) * speed, vy: (dy / len) * speed,
+        x,
+        y,
+        vx: (dx / len) * speed,
+        vy: (dy / len) * speed,
         r: isHazard ? rand(14, 26) : rand(7, 11),
-        life: 0, maxLife: 0,
+        life: 0,
+        maxLife: 0,
         kind: isHazard ? "hazard" : "orb",
         color: isHazard ? "#ff2e6a" : "#7bf3ff",
-        angle: rand(0, Math.PI * 2), spin: rand(-0.05, 0.05),
+        angle: rand(0, Math.PI * 2),
+        spin: rand(-0.05, 0.05),
       });
     };
     const spawnPower = () => {
       const def = rollPower();
       s.entities.push({
-        x: rand(60, Math.max(70, s.w - 60)), y: rand(60, Math.max(70, s.h - 60)),
-        vx: 0, vy: 0, r: 15, life: 0, maxLife: 9000,
-        kind: "power", color: def.color, power: def.id, angle: 0, spin: 0.03,
+        x: rand(60, Math.max(70, s.w - 60)),
+        y: rand(60, Math.max(70, s.h - 60)),
+        vx: 0,
+        vy: 0,
+        r: 15,
+        life: 0,
+        maxLife: 9000,
+        kind: "power",
+        color: def.color,
+        power: def.id,
+        angle: 0,
+        spin: 0.03,
       });
     };
     /** Explosion de particules (quantité adaptée aux performances) */
@@ -886,7 +1434,17 @@ export default function NeonRush() {
       for (let i = 0; i < n; i++) {
         const a = Math.random() * Math.PI * 2;
         const sp = rand(1, 6) * force;
-        s.particles.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, r: rand(1, 3), life: 0, maxLife: rand(400, 900), kind: "particle", color });
+        s.particles.push({
+          x,
+          y,
+          vx: Math.cos(a) * sp,
+          vy: Math.sin(a) * sp,
+          r: rand(1, 3),
+          life: 0,
+          maxLife: rand(400, 900),
+          kind: "particle",
+          color,
+        });
       }
     };
     /** Onde de choc */
@@ -916,9 +1474,12 @@ export default function NeonRush() {
       audioRef.current.powerUp(id);
       vibrate(id === "second" ? [20, 40, 20, 40, 30] : 22);
       notifyRef.current(`${trRef.current(def.labelKey)} ${trRef.current("pwOn")}`, {
-        kind: id === "second" ? "epic" : "success", icon: def.glyph, color: def.color,
+        kind: id === "second" ? "epic" : "success",
+        icon: def.glyph,
+        color: def.color,
       });
-      if (s.duo) notifyRef.current(trRef.current(def.coopKey), { kind: "info", icon: "🤝", ttl: 1800 });
+      if (s.duo)
+        notifyRef.current(trRef.current(def.coopKey), { kind: "info", icon: "🤝", ttl: 1800 });
       s.shake = Math.max(s.shake, 8);
     };
     const gameOverNow = (byTime = false) => {
@@ -931,34 +1492,60 @@ export default function NeonRush() {
         duoDownRef.current();
         return;
       }
-      s.over = true; s.running = false;
+      s.over = true;
+      s.running = false;
       audioRef.current.gameover();
-      setScore(fs); setRunning(false);
-      if (s.duo) { setGameOver(false); duoEndRef.current(fs); return; }
+      setScore(fs);
+      setRunning(false);
+      if (s.duo) {
+        setGameOver(false);
+        duoEndRef.current(fs);
+        return;
+      }
       setGameOver(true);
       finishRun(fs, s.mode, s.maxCombo);
     };
 
-
     const loop = (now: number) => {
-      const dt = Math.min(48, now - last); last = now;
+      const dt = Math.min(48, now - last);
+      last = now;
       // Qualité adaptative : si le mobile souffre, on réduit les particules (jamais le contrôle)
-      s.fpsAcc += dt; s.fpsFrames++;
+      s.fpsAcc += dt;
+      s.fpsFrames++;
       if (s.fpsFrames >= 45) {
         const avg = s.fpsAcc / s.fpsFrames;
         s.q = avg > 26 ? 0.4 : avg > 20 ? 0.7 : 1;
-        s.fpsAcc = 0; s.fpsFrames = 0;
+        s.fpsAcc = 0;
+        s.fpsFrames = 0;
       }
-      ctx.fillStyle = "rgba(10, 8, 22, 0.35)"; ctx.fillRect(0, 0, s.w, s.h);
-      ctx.save(); ctx.globalAlpha = 0.25; ctx.strokeStyle = "#3a1b6a"; ctx.lineWidth = 1;
-      const gs = 40; const off = (s.t * 0.03) % gs;
-      for (let x = -off; x < s.w; x += gs) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, s.h); ctx.stroke(); }
-      for (let y = -off; y < s.h; y += gs) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(s.w, y); ctx.stroke(); }
+      ctx.fillStyle = "rgba(10, 8, 22, 0.35)";
+      ctx.fillRect(0, 0, s.w, s.h);
+      ctx.save();
+      ctx.globalAlpha = 0.25;
+      ctx.strokeStyle = "#3a1b6a";
+      ctx.lineWidth = 1;
+      const gs = 40;
+      const off = (s.t * 0.03) % gs;
+      for (let x = -off; x < s.w; x += gs) {
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, s.h);
+        ctx.stroke();
+      }
+      for (let y = -off; y < s.h; y += gs) {
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(s.w, y);
+        ctx.stroke();
+      }
       ctx.restore();
 
       if (s.shake > 0) {
-        const sx = rand(-s.shake, s.shake), sy = rand(-s.shake, s.shake);
-        ctx.save(); ctx.translate(sx, sy); s.shake *= 0.88;
+        const sx = rand(-s.shake, s.shake),
+          sy = rand(-s.shake, s.shake);
+        ctx.save();
+        ctx.translate(sx, sy);
+        s.shake *= 0.88;
       }
 
       if (s.running) {
@@ -968,17 +1555,24 @@ export default function NeonRush() {
         if (s.duration > 0) {
           const left = Math.max(0, s.duration - s.t);
           setTimeLeft(Math.ceil(left / 1000));
-          if (left <= 0) { gameOverNow(); }
+          if (left <= 0) {
+            gameOverNow();
+          }
         }
         const spawnBase = 700;
         const spawnMin = 260;
         const spawnRate = Math.max(spawnMin, spawnBase - s.t * 0.05);
         if (s.t - s.lastSpawn > spawnRate) {
-          spawn(); if (Math.random() < 0.15 * s.difficulty) spawn(); s.lastSpawn = s.t;
+          spawn();
+          if (Math.random() < 0.15 * s.difficulty) spawn();
+          s.lastSpawn = s.t;
         }
         // Hardcore aussi a droit aux power-ups (plus rares) : ils sont indispensables au feeling
         const powerEvery = (s.mode === "hardcore" ? 13000 : 8500) * (s.lo.powerHunter ? 0.7 : 1);
-        if (s.t - s.lastPower > powerEvery) { spawnPower(); s.lastPower = s.t; }
+        if (s.t - s.lastPower > powerEvery) {
+          spawnPower();
+          s.lastPower = s.t;
+        }
 
         // Tight tracking for touch/mouse (input already snaps on touch); smooth for keyboard
         const boosting = s.powers.boost > 0;
@@ -993,7 +1587,17 @@ export default function NeonRush() {
         // Trainée de vitesse
         if (boosting && Math.random() < 0.7 * s.q) {
           const a = Math.random() * Math.PI * 2;
-          s.particles.push({ x: s.player.x, y: s.player.y, vx: Math.cos(a) * 1.2, vy: Math.sin(a) * 1.2, r: rand(1, 2.5), life: 0, maxLife: 380, kind: "particle", color: POWER_MAP.boost.color });
+          s.particles.push({
+            x: s.player.x,
+            y: s.player.y,
+            vx: Math.cos(a) * 1.2,
+            vy: Math.sin(a) * 1.2,
+            r: rand(1, 2.5),
+            life: 0,
+            maxLife: 380,
+            kind: "particle",
+            color: POWER_MAP.boost.color,
+          });
         }
 
         // Décompte des effets + animation de fin
@@ -1007,7 +1611,11 @@ export default function NeonRush() {
             wave(s.player.x, s.player.y, def.color, 130, 2, 420);
             burst(s.player.x, s.player.y, def.color, 16, 1);
             audioRef.current.expire();
-            notifyRef.current(`${trRef.current(def.labelKey)} ${trRef.current("pwEnd")}`, { kind: "warn", icon: def.glyph, ttl: 1500 });
+            notifyRef.current(`${trRef.current(def.labelKey)} ${trRef.current("pwEnd")}`, {
+              kind: "warn",
+              icon: def.glyph,
+              ttl: 1500,
+            });
             setPowers({ ...s.powers });
           }
         });
@@ -1016,45 +1624,76 @@ export default function NeonRush() {
         if (s.comboTimer === 0 && s.combo > 0) s.combo = 0;
 
         const slowFactor = s.powers.slow > 0 ? 0.35 : 1;
-        const magnetR = s.powers.magnet > 0 ? 210 : (s.lo.magnetCore ? 90 : 0);
+        const magnetR = s.powers.magnet > 0 ? 210 : s.lo.magnetCore ? 90 : 0;
 
         for (let i = s.entities.length - 1; i >= 0; i--) {
           const e = s.entities[i];
           if (e.kind === "power") {
-            e.life += dt; e.angle = (e.angle || 0) + (e.spin || 0);
-            if (e.life > e.maxLife) { s.entities.splice(i, 1); continue; }
+            e.life += dt;
+            e.angle = (e.angle || 0) + (e.spin || 0);
+            if (e.life > e.maxLife) {
+              s.entities.splice(i, 1);
+              continue;
+            }
           } else {
             if (magnetR && e.kind === "orb") {
-              const dx = s.player.x - e.x, dy = s.player.y - e.y;
+              const dx = s.player.x - e.x,
+                dy = s.player.y - e.y;
               const d = Math.hypot(dx, dy) || 1;
               if (d < magnetR) {
-                e.vx += (dx / d) * 0.55; e.vy += (dy / d) * 0.55;
+                e.vx += (dx / d) * 0.55;
+                e.vy += (dy / d) * 0.55;
                 // Filet de particules vers le joueur
                 if (Math.random() < 0.25 * s.q) {
-                  s.particles.push({ x: e.x, y: e.y, vx: (dx / d) * 3, vy: (dy / d) * 3, r: 1.4, life: 0, maxLife: 320, kind: "particle", color: POWER_MAP.magnet.color });
+                  s.particles.push({
+                    x: e.x,
+                    y: e.y,
+                    vx: (dx / d) * 3,
+                    vy: (dy / d) * 3,
+                    r: 1.4,
+                    life: 0,
+                    maxLife: 320,
+                    kind: "particle",
+                    color: POWER_MAP.magnet.color,
+                  });
                 }
               }
             }
             e.x += e.vx * slowFactor * (dt / 16);
             e.y += e.vy * slowFactor * (dt / 16);
             e.angle = (e.angle || 0) + (e.spin || 0);
-            if (e.x < -60 || e.x > s.w + 60 || e.y < -60 || e.y > s.h + 60) { s.entities.splice(i, 1); continue; }
+            if (e.x < -60 || e.x > s.w + 60 || e.y < -60 || e.y > s.h + 60) {
+              s.entities.splice(i, 1);
+              continue;
+            }
           }
           const shrink = e.kind === "hazard" && s.lo.hazardShrink ? 0.88 : 1;
           const rr = (e.r * shrink + s.player.r) ** 2;
           if (dist2(e, s.player) < rr) {
             if (e.kind === "orb") {
-              s.combo++; s.comboTimer = s.lo.comboKeeper ? 2880 : 1800;
+              s.combo++;
+              s.comboTimer = s.lo.comboKeeper ? 2880 : 1800;
               const comboUp = s.combo > s.maxCombo;
               if (comboUp) s.maxCombo = s.combo;
               const lucky = s.lo.luckyOrbs && Math.random() < 0.1;
-              const mul = (s.powers.x2 > 0 ? 2 : 1) * (s.powers.boost > 0 ? 1.25 : 1)
-                * (s.lo.scoreBoost ? 1.15 : 1) * (lucky ? 2 : 1);
+              const mul =
+                (s.powers.x2 > 0 ? 2 : 1) *
+                (s.powers.boost > 0 ? 1.25 : 1) *
+                (s.lo.scoreBoost ? 1.15 : 1) *
+                (lucky ? 2 : 1);
               const gain = Math.round((10 + s.combo * 2) * mul);
-              s.score += gain; setScore(Math.floor(s.score)); setCombo(s.combo);
+              s.score += gain;
+              setScore(Math.floor(s.score));
+              setCombo(s.combo);
               audioRef.current.pickup(s.combo);
               burst(e.x, e.y, s.skinColors[1], Math.round(18 * s.skinFx.particles), 1);
-              popup(e.x, e.y, `+${gain}`, s.powers.x2 > 0 ? POWER_MAP.x2.color : s.skinColors[1], s.powers.x2 > 0 ? 16 : 13);
+              popup(
+                e.x,
+                e.y,
+                `+${gain}`,
+                s.powers.x2 > 0 ? POWER_MAP.x2.color : s.skinColors[1],
+                s.powers.x2 > 0 ? 16 : 13,
+              );
               if (s.combo > 0 && s.combo % 10 === 0) {
                 wave(s.player.x, s.player.y, POWER_MAP.x2.color, 200, 3, 460);
                 popup(s.player.x, s.player.y - 34, `×${s.combo}`, "#fff17a", 20);
@@ -1080,19 +1719,29 @@ export default function NeonRush() {
               if (s.invuln > 0) {
                 // rien : fenêtre d'invulnérabilité (retour en jeu / turbo)
               } else if (s.powers.shield > 0) {
-                s.powers.shield = 0; setPowers({ ...s.powers });
+                s.powers.shield = 0;
+                setPowers({ ...s.powers });
                 burst(e.x, e.y, POWER_MAP.shield.color, 44, 1.6);
                 wave(s.player.x, s.player.y, POWER_MAP.shield.color, 200, 5, 480);
-                s.shake = 16; s.invuln = 350;
+                s.shake = 16;
+                s.invuln = 350;
                 audioRef.current.powerUp("shield");
                 vibrate(30);
-                notifyRef.current(`${trRef.current("shield")} — ${trRef.current("pwEnd")}`, { kind: "warn", icon: "⛨", ttl: 1600 });
+                notifyRef.current(`${trRef.current("shield")} — ${trRef.current("pwEnd")}`, {
+                  kind: "warn",
+                  icon: "⛨",
+                  ttl: 1600,
+                });
                 s.entities.splice(i, 1);
               } else if (s.secondCharges > 0) {
                 // SECONDE CHANCE : on survit, les dangers proches sont pulvérisés
-                s.secondCharges--; setSecondCharges(s.secondCharges);
-                s.entities = s.entities.filter((o) => o.kind !== "hazard" || dist2(o, s.player) > 240 ** 2);
-                s.invuln = 2200; s.powers.shield = Math.max(s.powers.shield, 1800);
+                s.secondCharges--;
+                setSecondCharges(s.secondCharges);
+                s.entities = s.entities.filter(
+                  (o) => o.kind !== "hazard" || dist2(o, s.player) > 240 ** 2,
+                );
+                s.invuln = 2200;
+                s.powers.shield = Math.max(s.powers.shield, 1800);
                 setPowers({ ...s.powers });
                 burst(s.player.x, s.player.y, POWER_MAP.second.color, 90, 2.4);
                 wave(s.player.x, s.player.y, POWER_MAP.second.color, 340, 6, 760);
@@ -1104,15 +1753,21 @@ export default function NeonRush() {
               } else {
                 burst(s.player.x, s.player.y, "#ff2e6a", 80, 2.2);
                 wave(s.player.x, s.player.y, "#ff2e6a", 280, 5, 620);
-                s.shake = 28; audioRef.current.hit(); vibrate([50, 30, 90]); gameOverNow();
+                s.shake = 28;
+                audioRef.current.hit();
+                vibrate([50, 30, 90]);
+                gameOverNow();
               }
             }
           }
         }
         for (let i = s.particles.length - 1; i >= 0; i--) {
           const p = s.particles[i];
-          p.life += dt; p.x += p.vx; p.y += p.vy;
-          p.vx *= 0.97; p.vy *= 0.97;
+          p.life += dt;
+          p.x += p.vx;
+          p.y += p.vy;
+          p.vx *= 0.97;
+          p.vy *= 0.97;
           if (p.life > p.maxLife) s.particles.splice(i, 1);
         }
       }
@@ -1126,75 +1781,179 @@ export default function NeonRush() {
       }
       for (let i = s.popups.length - 1; i >= 0; i--) {
         const p = s.popups[i];
-        p.life += dt; p.y += p.vy * (dt / 16);
+        p.life += dt;
+        p.y += p.vy * (dt / 16);
         if (p.life > p.maxLife) s.popups.splice(i, 1);
       }
 
       ctx.globalCompositeOperation = "lighter";
-      // Trail tinted with equipped skin's mid color
-      const [tc0, tc1] = s.skinColors;
-      for (let i = 0; i < s.player.trail.length; i++) {
-        const tt = s.player.trail[i]; const a = i / s.player.trail.length;
-        ctx.beginPath();
-        ctx.fillStyle = i % 2 === 0
-          ? `rgba(255,255,255,${a * 0.25})`
-          : `${tc1}${Math.floor(a * 90 + 20).toString(16).padStart(2, "0")}`;
-        void tc0;
-        ctx.arc(tt.x, tt.y, s.player.r * (0.3 + a * 0.9), 0, Math.PI * 2);
-        ctx.fill();
+      const [tc0, tc1, tc2] = s.skinColors;
+      const trail = s.player.trail;
+      const trailStep = s.skinRarity === "common" ? 2 : 1;
+      for (let i = 1; i < trail.length; i += trailStep) {
+        const tt = s.player.trail[i];
+        const next = trail[Math.min(i + 1, trail.length - 1)];
+        const prev = trail[i - 1];
+        const age = i / trail.length;
+        const size = s.player.r * (0.18 + age * (s.skinRarity === "common" ? 0.48 : 0.72));
+        const angle = Math.atan2(next.y - prev.y, next.x - prev.x);
+        const color = i % 2 === 0 ? tc0 : tc1;
+        ctx.save();
+        ctx.translate(tt.x, tt.y);
+        ctx.rotate(angle);
+        ctx.globalAlpha = age * (s.skinRarity === "common" ? 0.48 : 0.78);
+        ctx.shadowColor = color;
+        ctx.shadowBlur = s.skinRarity === "common" ? 5 : 10;
+        ctx.fillStyle = color;
+        ctx.strokeStyle = color;
+        ctx.lineWidth = Math.max(1, size * 0.2);
+
+        if (s.skinRarity === "common") {
+          ctx.beginPath();
+          ctx.moveTo(-size * 1.9, 0);
+          ctx.lineTo(size * 1.2, 0);
+          ctx.stroke();
+        } else if (s.skinRarity === "rare") {
+          tracePolygon(ctx, 0, 0, size, 4, Math.PI / 4);
+          ctx.fill();
+          ctx.fillStyle = "#ffffff";
+          tracePolygon(ctx, 0, 0, size * 0.38, 4, Math.PI / 4);
+          ctx.fill();
+        } else if (s.skinRarity === "epic") {
+          traceStar(ctx, 0, 0, size, size * 0.24, 4, s.t / 350 + i);
+          ctx.fill();
+        } else if (s.skinRarity === "legendary") {
+          ctx.beginPath();
+          ctx.moveTo(-size * 1.8, 0);
+          ctx.quadraticCurveTo(-size * 0.15, -size * 0.2, size, -size);
+          ctx.lineTo(size * 0.48, 0);
+          ctx.lineTo(size, size);
+          ctx.quadraticCurveTo(-size * 0.15, size * 0.2, -size * 1.8, 0);
+          ctx.fill();
+          ctx.fillStyle = tc2;
+          ctx.globalAlpha *= 0.7;
+          ctx.beginPath();
+          ctx.moveTo(-size * 0.65, 0);
+          ctx.lineTo(size * 0.55, -size * 0.35);
+          ctx.lineTo(size * 0.18, 0);
+          ctx.lineTo(size * 0.55, size * 0.35);
+          ctx.closePath();
+          ctx.fill();
+        } else if (s.skinRarity === "mythic") {
+          traceStar(ctx, 0, 0, size * 1.15, size * 0.5, 6, -s.t / 260 + i);
+          ctx.fill();
+          ctx.strokeStyle = tc2;
+          ctx.lineWidth = Math.max(1, size * 0.16);
+          ctx.beginPath();
+          ctx.moveTo(-size * 1.5, 0);
+          ctx.lineTo(-size * 0.65, 0);
+          ctx.moveTo(size * 0.65, 0);
+          ctx.lineTo(size * 1.5, 0);
+          ctx.stroke();
+        } else {
+          ctx.beginPath();
+          ctx.moveTo(-size * 1.4, 0);
+          ctx.lineTo(-size * 0.25, -size * 0.7);
+          ctx.lineTo(size * 1.2, 0);
+          ctx.lineTo(-size * 0.25, size * 0.7);
+          ctx.closePath();
+          ctx.stroke();
+          ctx.beginPath();
+          ctx.moveTo(-size * 0.25, -size * 0.35);
+          ctx.lineTo(size * 0.45, 0);
+          ctx.lineTo(-size * 0.25, size * 0.35);
+          ctx.stroke();
+        }
+        ctx.restore();
       }
       for (const e of s.entities) {
-        ctx.save(); ctx.translate(e.x, e.y); ctx.rotate(e.angle || 0);
+        ctx.save();
+        ctx.translate(e.x, e.y);
+        ctx.rotate(e.angle || 0);
         if (e.kind === "orb") {
           const g = ctx.createRadialGradient(0, 0, 0, 0, 0, e.r * 3);
           g.addColorStop(0, "rgba(160,255,255,1)");
           g.addColorStop(0.4, "rgba(123,243,255,0.7)");
           g.addColorStop(1, "rgba(123,243,255,0)");
-          ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, 0, e.r * 3, 0, Math.PI * 2); ctx.fill();
-          ctx.fillStyle = "#eaffff"; ctx.beginPath(); ctx.arc(0, 0, e.r * 0.7, 0, Math.PI * 2); ctx.fill();
+          ctx.fillStyle = g;
+          ctx.beginPath();
+          ctx.arc(0, 0, e.r * 3, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = "#eaffff";
+          ctx.beginPath();
+          ctx.arc(0, 0, e.r * 0.7, 0, Math.PI * 2);
+          ctx.fill();
         } else if (e.kind === "hazard") {
           // Compact halo (smaller radius = sharper on high-DPR mobile)
           const g = ctx.createRadialGradient(0, 0, e.r * 0.6, 0, 0, e.r * 1.6);
           g.addColorStop(0, "rgba(255,60,120,0.55)");
           g.addColorStop(1, "rgba(255,46,106,0)");
-          ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, 0, e.r * 1.6, 0, Math.PI * 2); ctx.fill();
+          ctx.fillStyle = g;
+          ctx.beginPath();
+          ctx.arc(0, 0, e.r * 1.6, 0, Math.PI * 2);
+          ctx.fill();
           // Crisp solid body
-          ctx.fillStyle = "#ff2e6a"; ctx.beginPath(); ctx.arc(0, 0, e.r, 0, Math.PI * 2); ctx.fill();
+          ctx.fillStyle = "#ff2e6a";
+          ctx.beginPath();
+          ctx.arc(0, 0, e.r, 0, Math.PI * 2);
+          ctx.fill();
           // Sharp spike ring outline
-          ctx.strokeStyle = "#ffe0ec"; ctx.lineWidth = 1.5; ctx.beginPath();
+          ctx.strokeStyle = "#ffe0ec";
+          ctx.lineWidth = 1.5;
+          ctx.beginPath();
           const spikes = 8;
           for (let k = 0; k < spikes * 2; k++) {
             const rr = k % 2 === 0 ? e.r * 1.05 : e.r * 0.7;
             const a = (k / (spikes * 2)) * Math.PI * 2;
-            const px = Math.cos(a) * rr, py = Math.sin(a) * rr;
-            if (k === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+            const px = Math.cos(a) * rr,
+              py = Math.sin(a) * rr;
+            if (k === 0) ctx.moveTo(px, py);
+            else ctx.lineTo(px, py);
           }
-          ctx.closePath(); ctx.stroke();
+          ctx.closePath();
+          ctx.stroke();
           // Bright core
-          ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(0, 0, e.r * 0.3, 0, Math.PI * 2); ctx.fill();
+          ctx.fillStyle = "#fff";
+          ctx.beginPath();
+          ctx.arc(0, 0, e.r * 0.3, 0, Math.PI * 2);
+          ctx.fill();
         } else if (e.kind === "power") {
           const def = POWER_MAP[e.power as PowerId];
           const c = def?.color || "#fff17a";
           const g = ctx.createRadialGradient(0, 0, 0, 0, 0, e.r * 3);
-          g.addColorStop(0, c); g.addColorStop(1, "rgba(0,0,0,0)");
-          ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, 0, e.r * 3, 0, Math.PI * 2); ctx.fill();
-          ctx.strokeStyle = c; ctx.lineWidth = 2; ctx.beginPath();
+          g.addColorStop(0, c);
+          g.addColorStop(1, "rgba(0,0,0,0)");
+          ctx.fillStyle = g;
+          ctx.beginPath();
+          ctx.arc(0, 0, e.r * 3, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.strokeStyle = c;
+          ctx.lineWidth = 2;
+          ctx.beginPath();
           for (let k = 0; k < 6; k++) {
             const a = (k / 6) * Math.PI * 2;
-            const px = Math.cos(a) * e.r, py = Math.sin(a) * e.r;
-            if (k === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+            const px = Math.cos(a) * e.r,
+              py = Math.sin(a) * e.r;
+            if (k === 0) ctx.moveTo(px, py);
+            else ctx.lineTo(px, py);
           }
-          ctx.closePath(); ctx.stroke();
-          ctx.fillStyle = "#0b0620"; ctx.font = "bold 12px Orbitron, sans-serif";
-          ctx.textAlign = "center"; ctx.textBaseline = "middle";
+          ctx.closePath();
+          ctx.stroke();
+          ctx.fillStyle = "#0b0620";
+          ctx.font = "bold 12px Orbitron, sans-serif";
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
           ctx.fillText(def?.glyph || "?", 0, 1);
         }
         ctx.restore();
       }
       for (const p of s.particles) {
         const a = 1 - p.life / p.maxLife;
-        ctx.fillStyle = p.color; ctx.globalAlpha = a;
-        ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = p.color;
+        ctx.globalAlpha = a;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+        ctx.fill();
       }
       ctx.globalAlpha = 1;
 
@@ -1202,11 +1961,15 @@ export default function NeonRush() {
       for (const w of s.waves) {
         const a = 1 - w.life / w.maxLife;
         ctx.globalAlpha = a * 0.9;
-        ctx.strokeStyle = w.color; ctx.lineWidth = w.width * a + 0.5;
-        ctx.beginPath(); ctx.arc(w.x, w.y, w.r, 0, Math.PI * 2); ctx.stroke();
+        ctx.strokeStyle = w.color;
+        ctx.lineWidth = w.width * a + 0.5;
+        ctx.beginPath();
+        ctx.arc(w.x, w.y, w.r, 0, Math.PI * 2);
+        ctx.stroke();
       }
       // Scores flottants
-      ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
       for (const p of s.popups) {
         const a = 1 - p.life / p.maxLife;
         ctx.globalAlpha = a;
@@ -1220,25 +1983,127 @@ export default function NeonRush() {
       const pr = s.player.r;
       const hasShield = s.powers.shield > 0;
       if (hasShield) {
-        ctx.strokeStyle = "rgba(160,255,234,0.9)"; ctx.lineWidth = 3;
-        ctx.beginPath(); ctx.arc(s.player.x, s.player.y, pr + 10 + Math.sin(s.t / 100) * 2, 0, Math.PI * 2); ctx.stroke();
+        ctx.strokeStyle = "rgba(160,255,234,0.9)";
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.arc(s.player.x, s.player.y, pr + 10 + Math.sin(s.t / 100) * 2, 0, Math.PI * 2);
+        ctx.stroke();
       }
       const [c0, c1, c2] = s.skinColors;
       const pulse = 1 + Math.sin(s.t / 200) * s.skinFx.pulse;
       // Mythic/legendary aura ring
       if (s.skinFx.aura > 0) {
         const ar = pr * (2.2 + s.skinFx.aura) * pulse;
-        const ag = ctx.createRadialGradient(s.player.x, s.player.y, pr * 0.8, s.player.x, s.player.y, ar);
+        const ag = ctx.createRadialGradient(
+          s.player.x,
+          s.player.y,
+          pr * 0.8,
+          s.player.x,
+          s.player.y,
+          ar,
+        );
         ag.addColorStop(0, `${c1}55`);
         ag.addColorStop(0.6, `${c1}22`);
         ag.addColorStop(1, "rgba(0,0,0,0)");
-        ctx.fillStyle = ag; ctx.beginPath(); ctx.arc(s.player.x, s.player.y, ar, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = ag;
+        ctx.beginPath();
+        ctx.arc(s.player.x, s.player.y, ar, 0, Math.PI * 2);
+        ctx.fill();
       }
-      const pg = ctx.createRadialGradient(s.player.x, s.player.y, 0, s.player.x, s.player.y, pr * 3 * pulse);
-      pg.addColorStop(0, c0); pg.addColorStop(0.3, c1); pg.addColorStop(1, "rgba(0,0,0,0)");
-      ctx.fillStyle = pg; ctx.beginPath(); ctx.arc(s.player.x, s.player.y, pr * 3 * pulse, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = c2; ctx.beginPath(); ctx.arc(s.player.x, s.player.y, pr * 0.9 * pulse, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = "#ffffff"; ctx.beginPath(); ctx.arc(s.player.x, s.player.y, pr * 0.5, 0, Math.PI * 2); ctx.fill();
+      const pg = ctx.createRadialGradient(
+        s.player.x,
+        s.player.y,
+        0,
+        s.player.x,
+        s.player.y,
+        pr * 3 * pulse,
+      );
+      pg.addColorStop(0, c0);
+      pg.addColorStop(0.3, c1);
+      pg.addColorStop(1, "rgba(0,0,0,0)");
+      ctx.fillStyle = pg;
+      ctx.beginPath();
+      ctx.arc(s.player.x, s.player.y, pr * 3 * pulse, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = c2;
+      ctx.beginPath();
+      ctx.arc(s.player.x, s.player.y, pr * 0.9 * pulse, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "#ffffff";
+      ctx.beginPath();
+      ctx.arc(s.player.x, s.player.y, pr * 0.5, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.save();
+      ctx.translate(s.player.x, s.player.y);
+      ctx.rotate(s.t / (s.skinRarity === "mythic" ? 1100 : 2200));
+      ctx.lineWidth = Math.max(1.4, pr * 0.12);
+      ctx.strokeStyle = c0;
+      ctx.fillStyle = c1;
+      ctx.shadowColor = c1;
+      ctx.shadowBlur = 8 + s.skinFx.aura * 2;
+      if (s.skinRarity === "common") {
+        tracePolygon(ctx, 0, 0, pr * 0.74, 4, Math.PI / 4);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(-pr * 0.38, pr * 0.2);
+        ctx.lineTo(pr * 0.28, -pr * 0.3);
+        ctx.stroke();
+      } else if (s.skinRarity === "rare") {
+        tracePolygon(ctx, 0, 0, pr * 0.9, 4, Math.PI / 4);
+        ctx.stroke();
+        tracePolygon(ctx, 0, 0, pr * 0.62, 4, 0);
+        ctx.globalAlpha = 0.7;
+        ctx.stroke();
+      } else if (s.skinRarity === "epic") {
+        traceStar(ctx, 0, 0, pr * 0.98, pr * 0.68, 8, Math.PI / 8);
+        ctx.stroke();
+        ctx.globalAlpha = 0.85;
+        traceStar(ctx, 0, 0, pr * 0.48, pr * 0.2, 4, Math.PI / 4);
+        ctx.fill();
+      } else if (s.skinRarity === "legendary") {
+        for (let wing = -1; wing <= 1; wing += 2) {
+          ctx.beginPath();
+          ctx.moveTo(0, -pr * 0.2);
+          ctx.quadraticCurveTo(wing * pr * 1.1, -pr * 0.95, wing * pr * 0.82, 0);
+          ctx.quadraticCurveTo(wing * pr * 1.1, pr * 0.95, 0, pr * 0.2);
+          ctx.stroke();
+        }
+        tracePolygon(ctx, 0, 0, pr * 0.48, 3, -Math.PI / 2);
+        ctx.fill();
+      } else if (s.skinRarity === "mythic") {
+        tracePolygon(ctx, 0, 0, pr * 1.05, 6, Math.PI / 6);
+        ctx.stroke();
+        traceStar(ctx, 0, 0, pr * 0.8, pr * 0.34, 6, -s.t / 300);
+        ctx.stroke();
+        for (let shard = 0; shard < 4; shard++) {
+          const angle = (shard / 4) * Math.PI * 2 + s.t / 500;
+          tracePolygon(
+            ctx,
+            Math.cos(angle) * pr * 1.24,
+            Math.sin(angle) * pr * 1.24,
+            pr * 0.16,
+            4,
+            Math.PI / 4,
+          );
+          ctx.fill();
+        }
+      } else {
+        tracePolygon(ctx, 0, 0, pr * 1.08, 6, Math.PI / 6);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(-pr * 0.62, 0);
+        ctx.lineTo(0, -pr * 0.62);
+        ctx.lineTo(pr * 0.62, 0);
+        ctx.lineTo(0, pr * 0.62);
+        ctx.closePath();
+        ctx.stroke();
+        ctx.globalAlpha = 0.85;
+        ctx.fillStyle = c2;
+        tracePolygon(ctx, 0, 0, pr * 0.28, 4, Math.PI / 4);
+        ctx.fill();
+      }
+      ctx.restore();
 
       ctx.globalCompositeOperation = "source-over";
       if (s.shake > 0) ctx.restore();
@@ -1248,26 +2113,42 @@ export default function NeonRush() {
     return () => cancelAnimationFrame(raf);
   }, [finishRun]);
 
-  useEffect(() => { audioRef.current.setMuted(muted); }, [muted]);
+  useEffect(() => {
+    audioRef.current.setMuted(muted);
+  }, [muted]);
 
   // Share button — Web Share, else clipboard + open X intent
   const share = async () => {
     const url = window.location.href;
-    const text = lang === "fr"
-      ? `J'ai fait ${score} points en ${t(lang, MODES.find(m => m.id === mode)!.nameKey)} sur NEON RUSH 🎮✨ Tu bats ça ?`
-      : lang === "es"
-      ? `¡Conseguí ${score} puntos en ${t(lang, MODES.find(m => m.id === mode)!.nameKey)} en NEON RUSH 🎮✨! ¿Puedes superarlo?`
-      : `I scored ${score} in ${t(lang, MODES.find(m => m.id === mode)!.nameKey)} on NEON RUSH 🎮✨ Beat that?`;
+    const text =
+      lang === "fr"
+        ? `J'ai fait ${score} points en ${t(lang, MODES.find((m) => m.id === mode)!.nameKey)} sur NEON RUSH 🎮✨ Tu bats ça ?`
+        : lang === "es"
+          ? `¡Conseguí ${score} puntos en ${t(lang, MODES.find((m) => m.id === mode)!.nameKey)} en NEON RUSH 🎮✨! ¿Puedes superarlo?`
+          : `I scored ${score} in ${t(lang, MODES.find((m) => m.id === mode)!.nameKey)} on NEON RUSH 🎮✨ Beat that?`;
     // Try Web Share API
-    if (typeof navigator !== "undefined" && (navigator as Navigator & { share?: (data: ShareData) => Promise<void> }).share) {
+    if (
+      typeof navigator !== "undefined" &&
+      (navigator as Navigator & { share?: (data: ShareData) => Promise<void> }).share
+    ) {
       try {
-        await (navigator as Navigator & { share: (data: ShareData) => Promise<void> }).share({ title: "NEON RUSH", text, url });
+        await (navigator as Navigator & { share: (data: ShareData) => Promise<void> }).share({
+          title: "NEON RUSH",
+          text,
+          url,
+        });
         return;
-      } catch { /* user cancelled or blocked, fall through */ }
+      } catch {
+        /* user cancelled or blocked, fall through */
+      }
     }
     // Clipboard fallback
-    try { await navigator.clipboard.writeText(`${text} ${url}`); showToast(tr("shared")); }
-    catch { showToast(tr("shared")); }
+    try {
+      await navigator.clipboard.writeText(`${text} ${url}`);
+      showToast(tr("shared"));
+    } catch {
+      showToast(tr("shared"));
+    }
     // Open Twitter/X intent in new tab as bonus
     const intent = `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}`;
     window.open(intent, "_blank", "noopener,noreferrer");
@@ -1290,7 +2171,6 @@ export default function NeonRush() {
     return () => window.clearTimeout(id);
   }, [panel, passTier]);
 
-
   const claimTier = (i: number) => {
     if (i >= passTier || prog.claimed.includes(i)) return;
     const reward = PASS_REWARDS[i];
@@ -1298,7 +2178,8 @@ export default function NeonRush() {
       let np = { ...p, claimed: [...p.claimed, i] };
       if (reward.type === "coins") np = { ...np, coins: np.coins + (reward.value as number) };
       else if (reward.type === "xp") np = { ...np, xp: np.xp + (reward.value as number) };
-      else if (reward.type === "chest") np = { ...np, coins: np.coins + 200 * (reward.value as number) };
+      else if (reward.type === "chest")
+        np = { ...np, coins: np.coins + 200 * (reward.value as number) };
       else if (reward.type === "skin") {
         const sk = reward.value as SkinId;
         if (!np.owned.includes(sk)) np = { ...np, owned: [...np.owned, sk] };
@@ -1312,7 +2193,10 @@ export default function NeonRush() {
     const sk = SKINS.find((s) => s.id === id)!;
     if (sk.passOnly || sk.chestOnly) return; // legendary/mythic = chest only
     if (prog.owned.includes(id)) return;
-    if (prog.coins < sk.price) { showToast(tr("notEnough")); return; }
+    if (prog.coins < sk.price) {
+      showToast(tr("notEnough"));
+      return;
+    }
     setProg((p) => ({ ...p, coins: p.coins - sk.price, owned: [...p.owned, id] }));
     showToast(tr("owned"));
   };
@@ -1332,8 +2216,14 @@ export default function NeonRush() {
   })();
 
   const openChest = () => {
-    if (chestLeft <= 0) { showToast(tr("noChestLeft")); return; }
-    if (prog.coins < CHEST_COST) { showToast(tr("notEnough")); return; }
+    if (chestLeft <= 0) {
+      showToast(tr("noChestLeft"));
+      return;
+    }
+    if (prog.coins < CHEST_COST) {
+      showToast(tr("notEnough"));
+      return;
+    }
     const reward = rollChestReward(prog.owned);
     const skinDef = reward.type === "skin" ? SKINS.find((k) => k.id === reward.skin) : undefined;
     setProg((p) => {
@@ -1366,12 +2256,23 @@ export default function NeonRush() {
   /* ---- Power-ups permanents ---- */
   const loadout = prog.loadout ?? [];
   const buyPerk = (id: string) => {
-    const pk = findPerk(id); if (!pk) return;
+    const pk = findPerk(id);
+    if (!pk) return;
     if (loadout.includes(id)) return;
     if ((prog.purchases ?? []).includes(perkKey(id))) return;
-    if (!perkUnlocked(pk, prog.stats ?? {})) { showToast(tr("perkLocked")); return; }
-    if (prog.coins < pk.cost) { showToast(tr("notEnoughCoins")); return; }
-    setProg((p) => ({ ...p, coins: p.coins - pk.cost, purchases: [...(p.purchases ?? []), perkKey(id)] }));
+    if (!perkUnlocked(pk, prog.stats ?? {})) {
+      showToast(tr("perkLocked"));
+      return;
+    }
+    if (prog.coins < pk.cost) {
+      showToast(tr("notEnoughCoins"));
+      return;
+    }
+    setProg((p) => ({
+      ...p,
+      coins: p.coins - pk.cost,
+      purchases: [...(p.purchases ?? []), perkKey(id)],
+    }));
     audioRef.current.power();
     showToast(tr("perkBought"));
   };
@@ -1383,19 +2284,25 @@ export default function NeonRush() {
       if (cur.length >= MAX_LOADOUT) return p;
       return { ...p, loadout: [...cur, id] };
     });
-    if ((prog.loadout ?? []).length >= MAX_LOADOUT && !(prog.loadout ?? []).includes(id)) showToast(tr("slotsFull"));
+    if ((prog.loadout ?? []).length >= MAX_LOADOUT && !(prog.loadout ?? []).includes(id))
+      showToast(tr("slotsFull"));
   };
 
   const claimMission = (id: string) => {
-    const tpl = findTemplate(id); if (!tpl) return;
+    const tpl = findTemplate(id);
+    if (!tpl) return;
     setProg((p) => {
-      const done = (m: { id: string; progress: number; claimed: boolean }) => m.id === id && !m.claimed && m.progress >= tpl.target;
+      const done = (m: { id: string; progress: number; claimed: boolean }) =>
+        m.id === id && !m.claimed && m.progress >= tpl.target;
       const dailyHit = p.missions.daily.list.some(done);
       const weeklyHit = p.missions.weekly.list.some(done);
       if (!dailyHit && !weeklyHit) return p;
-      const upd = (list: typeof p.missions.daily.list) => list.map((m) => (done(m) ? { ...m, claimed: true } : m));
+      const upd = (list: typeof p.missions.daily.list) =>
+        list.map((m) => (done(m) ? { ...m, claimed: true } : m));
       return {
-        ...p, coins: p.coins + tpl.coins, xp: p.xp + tpl.xp,
+        ...p,
+        coins: p.coins + tpl.coins,
+        xp: p.xp + tpl.xp,
         missions: {
           daily: { ...p.missions.daily, list: upd(p.missions.daily.list) },
           weekly: { ...p.missions.weekly, list: upd(p.missions.weekly.list) },
@@ -1416,15 +2323,27 @@ export default function NeonRush() {
           fetchLbFn({ data: { mode: lbMode } }),
           user ? fetchRankFn({ data: { mode: lbMode } }) : Promise.resolve(null),
         ]);
-        if (!cancel) { setLbRows(rows as LbRow[]); setMyRank(mine as { score: number; rank: number | null; total: number } | null); }
-      } finally { if (!cancel) setLbLoading(false); }
+        if (!cancel) {
+          setLbRows(rows as LbRow[]);
+          setMyRank(mine as { score: number; rank: number | null; total: number } | null);
+        }
+      } finally {
+        if (!cancel) setLbLoading(false);
+      }
     };
     load();
     const ch = supabase
       .channel(`lb-${lbMode}`)
-      .on("postgres_changes", { event: "*", schema: "public", table: "leaderboard_scores", filter: `mode=eq.${lbMode}` }, () => load())
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "leaderboard_scores", filter: `mode=eq.${lbMode}` },
+        () => load(),
+      )
       .subscribe();
-    return () => { cancel = true; supabase.removeChannel(ch); };
+    return () => {
+      cancel = true;
+      supabase.removeChannel(ch);
+    };
   }, [panel, lbMode, user, fetchLbFn, fetchRankFn]);
 
   // Aligne les meilleurs scores affichés (et donc le rang + les notifications de record)
@@ -1440,13 +2359,20 @@ export default function NeonRush() {
           const bestByMode = { ...p.bestByMode };
           for (const m of MODES) {
             const r = Math.floor((remote as Record<string, number>)[m.id] ?? 0);
-            if (r > (bestByMode[m.id] || 0)) { bestByMode[m.id] = r; changed = true; }
+            if (r > (bestByMode[m.id] || 0)) {
+              bestByMode[m.id] = r;
+              changed = true;
+            }
           }
           return changed ? { ...p, bestByMode } : p;
         });
       })
-      .catch(() => { /* noop */ });
-    return () => { cancel = true; };
+      .catch(() => {
+        /* noop */
+      });
+    return () => {
+      cancel = true;
+    };
   }, [user, fetchMyBestsFn, lbRows]);
 
   // Invité : aligne les meilleurs scores locaux sur ceux enregistrés au classement.
@@ -1461,13 +2387,20 @@ export default function NeonRush() {
           const bestByMode = { ...p.bestByMode };
           for (const m of MODES) {
             const r = Math.floor((remote as Record<string, number>)[m.id] ?? 0);
-            if (r > (bestByMode[m.id] || 0)) { bestByMode[m.id] = r; changed = true; }
+            if (r > (bestByMode[m.id] || 0)) {
+              bestByMode[m.id] = r;
+              changed = true;
+            }
           }
           return changed ? { ...p, bestByMode } : p;
         });
       })
-      .catch(() => { /* noop */ });
-    return () => { cancel = true; };
+      .catch(() => {
+        /* noop */
+      });
+    return () => {
+      cancel = true;
+    };
   }, [user, deviceId, guestBestsFn]);
 
   /* ------------------------- BADGES DE NOTIFICATION -------------------------
@@ -1476,28 +2409,57 @@ export default function NeonRush() {
   const badgeSignals = useMemo<Record<string, BadgeSignal>>(() => {
     // Pass : paliers débloqués non réclamés
     const passReady = PASS_REWARDS.reduce(
-      (n, _r, i) => n + (i < passTier && !prog.claimed.includes(i) ? 1 : 0), 0);
+      (n, _r, i) => n + (i < passTier && !prog.claimed.includes(i) ? 1 : 0),
+      0,
+    );
     // Quêtes : missions terminées non réclamées
-    const missionReady = (["daily", "weekly"] as const).reduce((n, b) => n + prog.missions[b].list.filter((m) => {
-      const tpl = findTemplate(m.id);
-      return tpl && !m.claimed && m.progress >= tpl.target;
-    }).length, 0);
+    const missionReady = (["daily", "weekly"] as const).reduce(
+      (n, b) =>
+        n +
+        prog.missions[b].list.filter((m) => {
+          const tpl = findTemplate(m.id);
+          return tpl && !m.claimed && m.progress >= tpl.target;
+        }).length,
+      0,
+    );
     // Power-ups : nouvellement débloqués et non achetés
-    const perksReady = PERKS.filter((pk) =>
-      perkUnlocked(pk, prog.stats ?? {}) && !(prog.purchases ?? []).includes(perkKey(pk.id))).length;
+    const perksReady = PERKS.filter(
+      (pk) =>
+        perkUnlocked(pk, prog.stats ?? {}) && !(prog.purchases ?? []).includes(perkKey(pk.id)),
+    ).length;
     // Skins : nouveaux skins obtenus
     const ownedCount = prog.owned.length;
 
     return {
-      pass: passReady > 0 ? { sig: `t${passTier}:c${prog.claimed.length}`, count: passReady } : null,
-      missions: missionReady > 0 ? { sig: `m${missionReady}:${prog.missions.daily.seed}:${prog.missions.weekly.seed}`, count: missionReady } : null,
+      pass:
+        passReady > 0 ? { sig: `t${passTier}:c${prog.claimed.length}`, count: passReady } : null,
+      missions:
+        missionReady > 0
+          ? {
+              sig: `m${missionReady}:${prog.missions.daily.seed}:${prog.missions.weekly.seed}`,
+              count: missionReady,
+            }
+          : null,
       leaderboard: { sig: `r${rank.id}:${myRank?.rank ?? "na"}`, count: 0 },
       ranked: { sig: `rk${rank.id}`, count: 0 },
       shop: chestLeft > 0 ? { sig: `${chestDayKey()}:${chestLeft}`, count: chestLeft } : null,
-      perks: perksReady > 0 ? { sig: `p${perksReady}:${(prog.purchases ?? []).length}`, count: perksReady } : null,
+      perks:
+        perksReady > 0
+          ? { sig: `p${perksReady}:${(prog.purchases ?? []).length}`, count: perksReady }
+          : null,
       skins: ownedCount > 1 ? { sig: `s${ownedCount}`, count: 0 } : null,
     };
-  }, [passTier, prog.claimed, prog.missions, prog.stats, prog.purchases, prog.owned, rank.id, myRank, chestLeft]);
+  }, [
+    passTier,
+    prog.claimed,
+    prog.missions,
+    prog.stats,
+    prog.purchases,
+    prog.owned,
+    rank.id,
+    myRank,
+    chestLeft,
+  ]);
 
   const { badge, markSeen } = useBadges(scope, badgeSignals);
 
@@ -1508,18 +2470,36 @@ export default function NeonRush() {
     return () => window.clearTimeout(id);
   }, [panel, markSeen]);
 
+  const activePowers = (Object.keys(powers) as Array<keyof typeof powers>).filter(
+    (k) => powers[k] > 0,
+  );
+  const powerKeyMap: Record<string, string> = {
+    shield: "shield",
+    slow: "slow",
+    magnet: "magnet",
+    x2: "x2",
+  };
+  const powerColor: Record<string, string> = {
+    shield: "text-glow-cyan",
+    slow: "text-glow-magenta",
+    magnet: "text-glow-yellow",
+    x2: "text-glow-yellow",
+  };
 
-  const activePowers = (Object.keys(powers) as Array<keyof typeof powers>).filter((k) => powers[k] > 0);
-  const powerKeyMap: Record<string, string> = { shield: "shield", slow: "slow", magnet: "magnet", x2: "x2" };
-  const powerColor: Record<string, string> = { shield: "text-glow-cyan", slow: "text-glow-magenta", magnet: "text-glow-yellow", x2: "text-glow-yellow" };
-
-  const currentModeName = useMemo(() => tr(MODES.find(m => m.id === mode)!.nameKey), [mode, tr]);
+  const currentModeName = useMemo(() => tr(MODES.find((m) => m.id === mode)!.nameKey), [mode, tr]);
 
   return (
     <main className="scanlines relative h-screen w-screen overflow-hidden">
-      <canvas ref={canvasRef} className="absolute inset-0 h-full w-full" style={{ touchAction: "none" }} />
+      <canvas
+        ref={canvasRef}
+        className="absolute inset-0 h-full w-full"
+        style={{ touchAction: "none" }}
+      />
       {joy && (
-        <div className="pointer-events-none absolute z-30" style={{ left: joy.ox - JOY_R, top: joy.oy - JOY_R, width: JOY_R * 2, height: JOY_R * 2 }}>
+        <div
+          className="pointer-events-none absolute z-30"
+          style={{ left: joy.ox - JOY_R, top: joy.oy - JOY_R, width: JOY_R * 2, height: JOY_R * 2 }}
+        >
           <div
             className="absolute inset-0 rounded-full border-2"
             style={{
@@ -1531,20 +2511,23 @@ export default function NeonRush() {
           <div
             className="absolute rounded-full"
             style={{
-              width: 46, height: 46,
-              left: JOY_R - 23 + joy.dx, top: JOY_R - 23 + joy.dy,
-              background: "radial-gradient(circle at 35% 35%, var(--neon-cyan), var(--neon-magenta))",
+              width: 46,
+              height: 46,
+              left: JOY_R - 23 + joy.dx,
+              top: JOY_R - 23 + joy.dy,
+              background:
+                "radial-gradient(circle at 35% 35%, var(--neon-cyan), var(--neon-magenta))",
               boxShadow: "0 0 22px color-mix(in srgb, var(--neon-magenta) 70%, transparent)",
             }}
           />
         </div>
       )}
       <div className="scanlines-overlay" />
-      {needNick && (
-        <NicknameGate onSave={saveNickname} tr={tr} onSignOut={signOut} />
-      )}
+      {needNick && <NicknameGate onSave={saveNickname} tr={tr} onSignOut={signOut} />}
 
-      {recordFlash && <div className="pointer-events-none absolute inset-0 z-40 animate-[hud-flash_0.9s_ease-out]" />}
+      {recordFlash && (
+        <div className="pointer-events-none absolute inset-0 z-40 animate-[hud-flash_0.9s_ease-out]" />
+      )}
       <NeonNotifications list={notifs} onDismiss={dismissNotif} />
       {secondCharges > 0 && (
         <div className="pointer-events-none absolute bottom-24 left-1/2 z-20 -translate-x-1/2 rounded-full border border-[#7dff9b]/60 bg-black/50 px-4 py-1 text-xs font-bold tracking-widest text-[#7dff9b]">
@@ -1555,8 +2538,12 @@ export default function NeonRush() {
       {/* HUD */}
       <header className="pointer-events-none absolute inset-x-0 top-0 z-10 flex items-start justify-between p-3 sm:p-6">
         <div className="panel-neon pointer-events-auto rounded-xl px-4 py-3">
-          <div className="text-[10px] uppercase tracking-[0.3em] text-muted-foreground">{tr("score")}</div>
-          <div className="font-display text-3xl font-black text-glow-cyan tabular-nums">{score}</div>
+          <div className="text-[10px] uppercase tracking-[0.3em] text-muted-foreground">
+            {tr("score")}
+          </div>
+          <div className="font-display text-3xl font-black text-glow-cyan tabular-nums">
+            {score}
+          </div>
           <div className="mt-1 text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
             {tr("best")} : <span className="text-glow-yellow">{best}</span>
           </div>
@@ -1568,29 +2555,46 @@ export default function NeonRush() {
           {duoActive && (
             <>
               <div className="mt-1 text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
-                🤝 {tr("duoTeamScore")} : <span className="text-glow-yellow tabular-nums">{duoTeamScore}</span>
+                🤝 {tr("duoTeamScore")} :{" "}
+                <span className="text-glow-yellow tabular-nums">{duoTeamScore}</span>
               </div>
               <div className="mt-1 text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
-                {tr("duoPartner")} : <span className="text-glow-magenta">{tr(duo.partner ? ({ alive: "duoAlive", down: "duoDown", dead: "duoDead", disconnected: "duoDisconnected" }[duo.partner.state] ?? "duoAlive") : "duoWaiting")}</span>
+                {tr("duoPartner")} :{" "}
+                <span className="text-glow-magenta">
+                  {tr(
+                    duo.partner
+                      ? ({
+                          alive: "duoAlive",
+                          down: "duoDown",
+                          dead: "duoDead",
+                          disconnected: "duoDisconnected",
+                        }[duo.partner.state] ?? "duoAlive")
+                      : "duoWaiting",
+                  )}
+                </span>
               </div>
             </>
           )}
         </div>
 
-
-
-
-
         <div className="flex flex-col items-end gap-2">
-          <button onClick={() => setMuted((m) => !m)} className="panel-neon pointer-events-auto rounded-lg px-3 py-2 text-xs font-bold uppercase tracking-widest text-glow-cyan transition hover:scale-105">
-            {muted ? `🔇 ${tr("muted")}` : `🔊 ${tr("sound")}`}
-          </button>
+          {running && (
+            <button
+              onClick={() => setMuted((m) => !m)}
+              className="panel-neon pointer-events-auto rounded-lg px-3 py-2 text-xs font-bold uppercase tracking-widest text-glow-cyan transition hover:scale-105"
+            >
+              {muted ? `🔇 ${tr("muted")}` : `🔊 ${tr("sound")}`}
+            </button>
+          )}
           {running && (
             <button
               onClick={() => {
                 const s = stateRef.current;
-                s.running = false; s.over = true;
-                setRunning(false); setGameOver(false); setRewardEarned(null);
+                s.running = false;
+                s.over = true;
+                setRunning(false);
+                setGameOver(false);
+                setRewardEarned(null);
               }}
               className="panel-neon pointer-events-auto rounded-lg px-3 py-2 text-xs font-bold uppercase tracking-widest text-glow-magenta transition hover:scale-105"
             >
@@ -1599,8 +2603,12 @@ export default function NeonRush() {
           )}
           {combo > 1 && running && (
             <div className="panel-neon rounded-xl px-4 py-2 animate-scale-in">
-              <div className="text-[10px] uppercase tracking-[0.3em] text-muted-foreground">{tr("combo")}</div>
-              <div className="font-display text-2xl font-black text-glow-magenta tabular-nums">×{combo}</div>
+              <div className="text-[10px] uppercase tracking-[0.3em] text-muted-foreground">
+                {tr("combo")}
+              </div>
+              <div className="font-display text-2xl font-black text-glow-magenta tabular-nums">
+                ×{combo}
+              </div>
             </div>
           )}
         </div>
@@ -1636,112 +2644,245 @@ export default function NeonRush() {
       {/* COOP : je suis à terre → compte à rebours */}
       {duoActive && duo.me?.state === "down" && (
         <div className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-3 bg-black/55 backdrop-blur-sm">
-          <div className="font-display text-4xl font-black uppercase tracking-[0.2em] text-glow-magenta animate-pulse">{tr("duoYouDown")}</div>
-          <div className="font-display text-6xl font-black text-glow-yellow tabular-nums">{Math.ceil(duoDownMs / 1000)}</div>
-          <div className="text-[11px] uppercase tracking-[0.25em] text-muted-foreground">{tr("duoWaitRevive")}</div>
+          <div className="font-display text-4xl font-black uppercase tracking-[0.2em] text-glow-magenta animate-pulse">
+            {tr("duoYouDown")}
+          </div>
+          <div className="font-display text-6xl font-black text-glow-yellow tabular-nums">
+            {Math.ceil(duoDownMs / 1000)}
+          </div>
+          <div className="text-[11px] uppercase tracking-[0.25em] text-muted-foreground">
+            {tr("duoWaitRevive")}
+          </div>
         </div>
       )}
 
       {toast && (
         <div className="pointer-events-none absolute inset-x-0 top-24 z-30 flex justify-center animate-fade-in">
-          <div className="panel-neon rounded-full px-5 py-2 text-xs font-bold uppercase tracking-[0.25em] text-glow-yellow">{toast}</div>
+          <div className="panel-neon rounded-full px-5 py-2 text-xs font-bold uppercase tracking-[0.25em] text-glow-yellow">
+            {toast}
+          </div>
         </div>
       )}
 
       {/* MAIN MENU */}
       {!running && !panel && (
-        <div className="absolute inset-0 z-20 flex items-center justify-center p-4 overflow-y-auto">
-          <div className="panel-neon pulse-glow w-full max-w-md rounded-2xl p-6 sm:p-8 text-center animate-fade-in my-auto">
-            <div className="mb-2 text-xs uppercase tracking-[0.5em] text-muted-foreground">{tr("tagline")}</div>
-            <h1 className="font-display text-5xl font-black leading-none sm:text-6xl">
-              <span className="text-glow-cyan">NEON</span> <span className="text-glow-magenta">RUSH</span>
-            </h1>
+        <div className="main-menu-shell absolute inset-0 z-20 overflow-y-auto p-3 sm:p-6">
+          <div className="main-menu panel-neon mx-auto my-auto w-full max-w-5xl animate-fade-in">
+            <header className="main-menu__header">
+              <div className="flex min-w-0 items-center gap-3 sm:gap-5">
+                <img className="main-menu__logo" src="/icon-512.png" alt="" aria-hidden="true" />
+                <div className="min-w-0 text-left">
+                  <p className="main-menu__eyebrow">{tr("tagline")}</p>
+                  <h1 className="main-menu__title">
+                    <span>NEON</span> <strong>RUSH</strong>
+                  </h1>
+                  <p className="main-menu__description">{tr("intro")}</p>
+                </div>
+              </div>
+              <div className="main-menu__account">
+                {user ? (
+                  <>
+                    <span className="main-menu__account-name">
+                      {prog.displayName ?? user.email ?? "Compte"}
+                    </span>
+                    <button onClick={signOut} className="main-menu__account-action">
+                      {tr("signOut")}
+                    </button>
+                  </>
+                ) : (
+                  <Link to="/auth" className="main-menu__account-action">
+                    {tr("signIn")}
+                  </Link>
+                )}
+              </div>
+            </header>
 
-            {/* Rank + Coins strip */}
-            <div className="mt-4 flex items-center justify-center gap-3 text-[10px] uppercase tracking-[0.2em]">
-              <span className="panel-neon rounded-full px-3 py-1" style={{ color: rank.color, textShadow: `0 0 10px ${rank.color}` }}>
-                {tr("rank")} · {rank.name}
-              </span>
-              <span className="panel-neon rounded-full px-3 py-1 text-glow-yellow">🪙 {prog.coins}</span>
+            <div className="main-menu__status">
+              <div className="main-menu__stat">
+                <Award aria-hidden="true" />
+                <span>
+                  <small>{tr("rank")}</small>
+                  <strong style={{ color: rank.color, textShadow: `0 0 12px ${rank.color}` }}>
+                    {rank.name}
+                  </strong>
+                </span>
+              </div>
+              <div className="main-menu__stat main-menu__stat--coins">
+                <span className="main-menu__coin-mark" aria-hidden="true">
+                  ✦
+                </span>
+                <span>
+                  <small>{tr("coins")}</small>
+                  <strong>{prog.coins.toLocaleString()}</strong>
+                </span>
+              </div>
+              <div className="main-menu__stat">
+                <Medal aria-hidden="true" />
+                <span>
+                  <small>{tr("best")}</small>
+                  <strong>{globalBest.toLocaleString()}</strong>
+                </span>
+              </div>
             </div>
-
-            {/* Account */}
-            <div className="mt-3 flex items-center justify-center gap-2 text-[10px] uppercase tracking-[0.2em]">
-              {user ? (
-                <>
-                  <span className="panel-neon rounded-full px-3 py-1 text-glow-cyan truncate max-w-[220px]">☁ {prog.displayName ?? user.email ?? "Compte"}</span>
-                  <button onClick={signOut} className="panel-neon rounded-full px-3 py-1 text-glow-magenta hover:scale-105 transition">
-                    {tr("signOut")}
-                  </button>
-                </>
-              ) : (
-                <Link to="/auth" className="panel-neon rounded-full px-3 py-1 text-glow-cyan hover:scale-105 transition">
-                  ☁ {tr("signIn")}
-                </Link>
-              )}
-            </div>
-
-            <p className="mx-auto mt-4 max-w-sm text-sm text-muted-foreground">{tr("intro")}</p>
 
             {gameOver && (
-              <div className="mt-5 rounded-xl border border-border/60 bg-black/30 p-4">
-                <div className="text-[10px] uppercase tracking-[0.3em] text-muted-foreground">{tr("final")} · {currentModeName}</div>
-                <div className="font-display text-4xl font-black text-glow-magenta tabular-nums">{score}</div>
-                <div className="mt-1 text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
-                  {tr("record")} : <span className="text-glow-yellow">{best}</span>
+              <div className="main-menu__result">
+                <div>
+                  <small>
+                    {tr("final")} · {currentModeName}
+                  </small>
+                  <strong>{score.toLocaleString()}</strong>
+                </div>
+                <div>
+                  <small>{tr("record")}</small>
+                  <strong className="text-glow-yellow">{best.toLocaleString()}</strong>
                 </div>
                 {rewardEarned && (
-                  <div className="mt-3 flex justify-center gap-3 text-[11px] uppercase tracking-[0.2em]">
-                    <span className="text-glow-yellow">+{rewardEarned.coins} 🪙</span>
+                  <div className="main-menu__rewards">
+                    <span className="text-glow-yellow">+{rewardEarned.coins} ✦</span>
                     <span className="text-glow-cyan">+{rewardEarned.xp} XP</span>
-                    {rewardEarned.skin && <span className="text-glow-magenta">✨ {rewardEarned.skin}</span>}
+                    {rewardEarned.skin && (
+                      <span className="text-glow-magenta">✧ {rewardEarned.skin}</span>
+                    )}
                   </div>
                 )}
               </div>
             )}
 
-            <button onClick={() => start(mode)} className="mt-6 w-full rounded-xl border border-[color:var(--neon-cyan)] bg-gradient-to-r from-[color:var(--neon-cyan)]/20 via-[color:var(--neon-magenta)]/20 to-[color:var(--neon-cyan)]/20 px-6 py-4 font-display text-lg font-black uppercase tracking-[0.3em] text-glow-cyan transition hover:scale-[1.02] hover:shadow-[0_0_40px_-5px_var(--neon-magenta)]">
-              {gameOver ? tr("replay") : tr("play")} · {currentModeName}
-            </button>
-
-            {gameOver && (
-              <button onClick={share} className="mt-3 w-full rounded-xl border border-border/60 bg-black/20 px-6 py-3 font-display text-sm font-bold uppercase tracking-[0.3em] text-glow-yellow transition hover:scale-[1.02]">
-                {tr("share")}
+            <div className="main-menu__actions">
+              <button onClick={() => start(mode)} className="main-menu__play">
+                {gameOver ? <RotateCcw aria-hidden="true" /> : <Play aria-hidden="true" />}
+                <span>
+                  <small>{gameOver ? tr("replay") : tr("play")}</small>
+                  <strong>{currentModeName}</strong>
+                </span>
+                <span className="main-menu__play-arrow" aria-hidden="true">
+                  ↗
+                </span>
               </button>
-            )}
-
-            {/* Nav tabs */}
-            <div className="mt-5 grid grid-cols-2 gap-2 sm:grid-cols-3 text-xs uppercase tracking-[0.2em]">
-              <button onClick={() => setPanel("modes")} className="panel-neon relative rounded-lg py-2 text-glow-cyan hover:scale-105 transition">{tr("mode")}</button>
-              <button onClick={() => setPanel("shop")} className="panel-neon relative rounded-lg py-2 text-glow-yellow hover:scale-105 transition">
-                🎁 {tr("shop")}{badge("shop") && <NotifBadge count={badge("shop")!.count} />}
-              </button>
-              <button onClick={() => setPanel("perks")} className="panel-neon relative rounded-lg py-2 text-glow-cyan hover:scale-105 transition">
-                ⚡ {tr("powerups")}{badge("perks") && <NotifBadge count={badge("perks")!.count} />}
-              </button>
-              <button onClick={() => setPanel("skins")} className="panel-neon relative rounded-lg py-2 text-glow-magenta hover:scale-105 transition">
-                {tr("skins")}{badge("skins") && <NotifBadge />}
-              </button>
-              <button onClick={() => setPanel("pass")} className="panel-neon relative rounded-lg py-2 text-glow-yellow hover:scale-105 transition">
-                {tr("pass")}{badge("pass") && <NotifBadge count={badge("pass")!.count} />}
-              </button>
-              <button onClick={() => setPanel("missions")} className="panel-neon relative rounded-lg py-2 text-glow-cyan hover:scale-105 transition">
-                {tr("missions")}{badge("missions") && <NotifBadge count={badge("missions")!.count} />}
-              </button>
-              <button onClick={() => setPanel("leaderboard")} className="panel-neon relative rounded-lg py-2 text-glow-yellow hover:scale-105 transition">
-                🌍 {tr("leaderboard")}{badge("leaderboard") && <NotifBadge />}
-              </button>
-              <button onClick={() => setPanel("ranked")} className="panel-neon relative rounded-lg py-2 text-glow-cyan hover:scale-105 transition">
-                {tr("ranked")}{badge("ranked") && <NotifBadge />}
-              </button>
-              <button onClick={() => setPanel("duo")} className="panel-neon rounded-lg py-2 text-glow-magenta hover:scale-105 transition col-span-2 sm:col-span-3">🤝 {tr("duo")}</button>
-              <button onClick={() => setPanel("settings")} className="panel-neon rounded-lg py-2 text-glow-magenta hover:scale-105 transition col-span-2 sm:col-span-3">{tr("settings")}</button>
+              {gameOver && (
+                <button onClick={share} className="main-menu__share">
+                  <Share2 aria-hidden="true" />
+                  {tr("share")}
+                </button>
+              )}
             </div>
 
-            <div className="mt-5 grid grid-cols-2 gap-2 text-left text-[10px] uppercase tracking-[0.15em] text-muted-foreground">
-              <div>{tr("controls1")}</div>
-              <div>{tr("controls2")}</div>
+            <div className="main-menu__section-heading">
+              <span>{lang === "fr" ? "EXPLORER" : lang === "es" ? "EXPLORAR" : "EXPLORE"}</span>
+              <i />
             </div>
+            <nav className="main-menu__nav" aria-label={tr("menu")}>
+              <button
+                onClick={() => setPanel("modes")}
+                className="main-menu__nav-button main-menu__nav-button--cyan"
+              >
+                <span className="main-menu__nav-icon">
+                  <Gamepad2 aria-hidden="true" />
+                </span>
+                <span>{tr("mode")}</span>
+              </button>
+              <button
+                onClick={() => setPanel("shop")}
+                className="main-menu__nav-button main-menu__nav-button--yellow"
+              >
+                <span className="main-menu__nav-icon">
+                  <ShoppingBag aria-hidden="true" />
+                </span>
+                <span>{tr("shop")}</span>
+                {badge("shop") && <NotifBadge count={badge("shop")!.count} />}
+              </button>
+              <button
+                onClick={() => setPanel("perks")}
+                className="main-menu__nav-button main-menu__nav-button--cyan"
+              >
+                <span className="main-menu__nav-icon">
+                  <Zap aria-hidden="true" />
+                </span>
+                <span>{tr("powerups")}</span>
+                {badge("perks") && <NotifBadge count={badge("perks")!.count} />}
+              </button>
+              <button
+                onClick={() => setPanel("skins")}
+                className="main-menu__nav-button main-menu__nav-button--magenta"
+              >
+                <span className="main-menu__nav-icon">
+                  <Sparkles aria-hidden="true" />
+                </span>
+                <span>{tr("skins")}</span>
+                {badge("skins") && <NotifBadge />}
+              </button>
+              <button
+                onClick={() => setPanel("pass")}
+                className="main-menu__nav-button main-menu__nav-button--yellow"
+              >
+                <span className="main-menu__nav-icon">
+                  <Crown aria-hidden="true" />
+                </span>
+                <span>{tr("pass")}</span>
+                {badge("pass") && <NotifBadge count={badge("pass")!.count} />}
+              </button>
+              <button
+                onClick={() => setPanel("missions")}
+                className="main-menu__nav-button main-menu__nav-button--cyan"
+              >
+                <span className="main-menu__nav-icon">
+                  <Target aria-hidden="true" />
+                </span>
+                <span>{tr("missions")}</span>
+                {badge("missions") && <NotifBadge count={badge("missions")!.count} />}
+              </button>
+              <button
+                onClick={() => setPanel("leaderboard")}
+                className="main-menu__nav-button main-menu__nav-button--yellow"
+              >
+                <span className="main-menu__nav-icon">
+                  <Globe2 aria-hidden="true" />
+                </span>
+                <span>{tr("leaderboard")}</span>
+                {badge("leaderboard") && <NotifBadge />}
+              </button>
+              <button
+                onClick={() => setPanel("ranked")}
+                className="main-menu__nav-button main-menu__nav-button--magenta"
+              >
+                <span className="main-menu__nav-icon">
+                  <Medal aria-hidden="true" />
+                </span>
+                <span>{tr("ranked")}</span>
+                {badge("ranked") && <NotifBadge />}
+              </button>
+              <button
+                onClick={() => setPanel("duo")}
+                className="main-menu__nav-button main-menu__nav-button--magenta main-menu__nav-button--wide"
+              >
+                <span className="main-menu__nav-icon">
+                  <UsersRound aria-hidden="true" />
+                </span>
+                <span>{tr("duo")}</span>
+              </button>
+              <button
+                onClick={() => setPanel("settings")}
+                className="main-menu__nav-button main-menu__nav-button--cyan main-menu__nav-button--wide"
+              >
+                <span className="main-menu__nav-icon">
+                  <Settings2 aria-hidden="true" />
+                </span>
+                <span>{tr("settings")}</span>
+              </button>
+            </nav>
+
+            <footer className="main-menu__footer">
+              <span>
+                <HelpCircle aria-hidden="true" /> {tr("controls1")}
+              </span>
+              <span>
+                <Gamepad2 aria-hidden="true" /> {tr("controls2")}
+              </span>
+              <span>
+                <Handshake aria-hidden="true" /> NEON RUSH
+              </span>
+            </footer>
           </div>
         </div>
       )}
@@ -1751,7 +2892,9 @@ export default function NeonRush() {
         <div className="absolute inset-0 z-40 flex items-center justify-center bg-black/70 backdrop-blur-sm">
           <div className="text-center">
             <div
-              className={chestFx.stage === "shake" ? "chest-shake text-7xl" : "chest-reveal text-7xl"}
+              className={
+                chestFx.stage === "shake" ? "chest-shake text-7xl" : "chest-reveal text-7xl"
+              }
               style={{ filter: `drop-shadow(0 0 30px ${RARITY_COLOR[chestFx.rarity]})` }}
             >
               {chestFx.stage === "shake" ? "🎁" : "✨"}
@@ -1767,11 +2910,16 @@ export default function NeonRush() {
                 />
                 <div
                   className="mt-4 font-display text-xs font-black uppercase tracking-[0.4em]"
-                  style={{ color: RARITY_COLOR[chestFx.rarity], textShadow: `0 0 14px ${RARITY_COLOR[chestFx.rarity]}` }}
+                  style={{
+                    color: RARITY_COLOR[chestFx.rarity],
+                    textShadow: `0 0 14px ${RARITY_COLOR[chestFx.rarity]}`,
+                  }}
                 >
                   {chestFx.rarity}
                 </div>
-                <div className="mt-1 font-display text-2xl font-black text-glow-cyan">{chestFx.name}</div>
+                <div className="mt-1 font-display text-2xl font-black text-glow-cyan">
+                  {chestFx.name}
+                </div>
               </div>
             )}
           </div>
@@ -1783,23 +2931,48 @@ export default function NeonRush() {
         <div className="absolute inset-0 z-20 flex items-center justify-center p-4 overflow-y-auto">
           <div className="panel-neon w-full max-w-lg rounded-2xl p-6 animate-fade-in my-auto">
             <div className="flex items-center justify-between mb-4">
-              <h2 className="font-display text-2xl font-black text-glow-cyan uppercase tracking-widest">{tr(panel === "modes" ? "mode" : panel === "perks" ? "powerups" : panel)}</h2>
-              <button onClick={() => setPanel(null)} className="panel-neon rounded-lg px-3 py-1 text-xs uppercase tracking-widest text-glow-magenta">{tr("back")}</button>
+              <h2 className="font-display text-2xl font-black text-glow-cyan uppercase tracking-widest">
+                {tr(panel === "modes" ? "mode" : panel === "perks" ? "powerups" : panel)}
+              </h2>
+              <button
+                onClick={() => setPanel(null)}
+                className="panel-neon rounded-lg px-3 py-1 text-xs uppercase tracking-widest text-glow-magenta"
+              >
+                {tr("back")}
+              </button>
             </div>
 
             {panel === "modes" && (
               <div className="space-y-2">
                 {MODES.map((m) => (
-                  <button key={m.id} onClick={() => { setMode(m.id); showToast(tr(m.nameKey)); }} className={`w-full rounded-xl border p-3 text-left transition ${mode === m.id ? "border-[color:var(--neon-cyan)] bg-[color:var(--neon-cyan)]/10" : "border-border/50 bg-black/20 hover:border-[color:var(--neon-magenta)]"}`}>
-                    <div className="font-display text-lg font-black text-glow-cyan uppercase tracking-widest">{tr(m.nameKey)}</div>
+                  <button
+                    key={m.id}
+                    onClick={() => {
+                      setMode(m.id);
+                      showToast(tr(m.nameKey));
+                    }}
+                    className={`w-full rounded-xl border p-3 text-left transition ${mode === m.id ? "border-[color:var(--neon-cyan)] bg-[color:var(--neon-cyan)]/10" : "border-border/50 bg-black/20 hover:border-[color:var(--neon-magenta)]"}`}
+                  >
+                    <div className="font-display text-lg font-black text-glow-cyan uppercase tracking-widest">
+                      {tr(m.nameKey)}
+                    </div>
                     <div className="text-xs text-muted-foreground">{tr(m.descKey)}</div>
-                    <div className="mt-1 text-[10px] uppercase tracking-[0.2em] text-glow-yellow">{tr("best")}: {prog.bestByMode[m.id]}</div>
+                    <div className="mt-1 text-[10px] uppercase tracking-[0.2em] text-glow-yellow">
+                      {tr("best")}: {prog.bestByMode[m.id]}
+                    </div>
                   </button>
                 ))}
-                <button onClick={() => setPanel("duo")} className="w-full rounded-xl border border-[color:var(--neon-magenta)]/60 bg-[color:var(--neon-magenta)]/10 p-3 text-left transition hover:border-[color:var(--neon-magenta)]">
-                  <div className="font-display text-lg font-black text-glow-magenta uppercase tracking-widest">🤝 {tr("duo")}</div>
+                <button
+                  onClick={() => setPanel("duo")}
+                  className="w-full rounded-xl border border-[color:var(--neon-magenta)]/60 bg-[color:var(--neon-magenta)]/10 p-3 text-left transition hover:border-[color:var(--neon-magenta)]"
+                >
+                  <div className="font-display text-lg font-black text-glow-magenta uppercase tracking-widest">
+                    🤝 {tr("duo")}
+                  </div>
                   <div className="text-xs text-muted-foreground">{tr("duoDesc")}</div>
-                  <div className="mt-1 text-[10px] uppercase tracking-[0.2em] text-glow-yellow">{tr("best")} · {tr("duoTeamScore")}: {prog.duoBest ?? 0}</div>
+                  <div className="mt-1 text-[10px] uppercase tracking-[0.2em] text-glow-yellow">
+                    {tr("best")} · {tr("duoTeamScore")}: {prog.duoBest ?? 0}
+                  </div>
                 </button>
               </div>
             )}
@@ -1807,8 +2980,15 @@ export default function NeonRush() {
             {panel === "skins" && (
               <div>
                 <div className="mb-3 flex items-center justify-between text-xs uppercase tracking-[0.2em]">
-                  <span className="text-glow-cyan">{tr("ownedCount")} · {prog.owned.length}/{SKINS.length}</span>
-                  <button onClick={() => setPanel("shop")} className="panel-neon rounded-lg px-3 py-1 text-glow-yellow hover:scale-105 transition">🎁 {tr("shop")}</button>
+                  <span className="text-glow-cyan">
+                    {tr("ownedCount")} · {prog.owned.length}/{SKINS.length}
+                  </span>
+                  <button
+                    onClick={() => setPanel("shop")}
+                    className="panel-neon rounded-lg px-3 py-1 text-glow-yellow hover:scale-105 transition"
+                  >
+                    🎁 {tr("shop")}
+                  </button>
                 </div>
                 <p className="mb-3 text-[11px] text-muted-foreground">{tr("collectionDesc")}</p>
                 <div className="grid grid-cols-2 gap-2 max-h-[60vh] overflow-y-auto">
@@ -1817,10 +2997,35 @@ export default function NeonRush() {
                     const eq = prog.equipped === sk.id;
                     const rc = RARITY_COLOR[sk.rarity];
                     return (
-                      <div key={sk.id} className={`rounded-xl border p-3 ${owned ? "" : "opacity-45"}`} style={{ borderColor: `${rc}55`, background: `linear-gradient(180deg, ${rc}10, rgba(0,0,0,0.35))` }}>
-                        <div className="mx-auto h-12 w-12 rounded-full" style={{ background: owned ? `radial-gradient(circle at 30% 30%, ${sk.colors[0]}, ${sk.colors[1]} 50%, ${sk.colors[2]})` : "rgba(255,255,255,0.06)", boxShadow: owned ? `0 0 24px ${rc}` : "none" }} />
-                        <div className="mt-2 text-center text-xs font-bold uppercase tracking-widest">{owned ? sk.name : "???"}</div>
-                        <div className="text-center text-[10px] uppercase tracking-[0.25em] font-bold" style={{ color: rc, textShadow: `0 0 8px ${rc}` }}>{sk.rarity}</div>
+                      <div
+                        key={sk.id}
+                        className={`rounded-xl border p-3 ${owned ? "" : "opacity-45"}`}
+                        style={{
+                          borderColor: `${rc}55`,
+                          background: `linear-gradient(180deg, ${rc}10, rgba(0,0,0,0.35))`,
+                        }}
+                      >
+                        <div
+                          className={`skin-preview skin-preview--${sk.rarity} mx-auto h-12 w-12`}
+                          style={{
+                            background: owned
+                              ? `linear-gradient(145deg, ${sk.colors[0]}, ${sk.colors[1]} 52%, ${sk.colors[2]})`
+                              : "rgba(255,255,255,0.06)",
+                            filter: owned ? `drop-shadow(0 0 8px ${rc})` : "none",
+                          }}
+                        >
+                          <span />
+                          <i />
+                        </div>
+                        <div className="mt-2 text-center text-xs font-bold uppercase tracking-widest">
+                          {owned ? sk.name : "???"}
+                        </div>
+                        <div
+                          className="text-center text-[10px] uppercase tracking-[0.25em] font-bold"
+                          style={{ color: rc, textShadow: `0 0 8px ${rc}` }}
+                        >
+                          {sk.rarity}
+                        </div>
                         <button
                           onClick={() => equipSkin(sk.id)}
                           disabled={!owned || eq}
@@ -1839,16 +3044,28 @@ export default function NeonRush() {
               <div>
                 <div className="mb-3 flex items-center justify-between text-xs uppercase tracking-[0.2em]">
                   <span className="text-glow-yellow">🪙 {prog.coins}</span>
-                  <span className="text-glow-cyan">{tr("chestsLeft")} · {chestLeft}/{DAILY_CHEST_LIMIT}</span>
+                  <span className="text-glow-cyan">
+                    {tr("chestsLeft")} · {chestLeft}/{DAILY_CHEST_LIMIT}
+                  </span>
                 </div>
                 <p className="mb-4 text-[11px] text-muted-foreground">{tr("shopDesc")}</p>
                 <div className="rounded-2xl border border-[color:var(--neon-yellow)]/50 bg-gradient-to-b from-[color:var(--neon-yellow)]/10 to-black/40 p-5 text-center">
                   <div className="mx-auto text-5xl">🎁</div>
-                  <div className="mt-2 font-display text-lg font-black uppercase tracking-[0.25em] text-glow-yellow">{tr("openChest")}</div>
-                  <div className="mt-1 text-[10px] uppercase tracking-[0.2em] text-muted-foreground">{tr("resetIn")} {chestResetLabel}</div>
+                  <div className="mt-2 font-display text-lg font-black uppercase tracking-[0.25em] text-glow-yellow">
+                    {tr("openChest")}
+                  </div>
+                  <div className="mt-1 text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+                    {tr("resetIn")} {chestResetLabel}
+                  </div>
                   <div className="mt-3 flex flex-wrap justify-center gap-1 text-[9px] uppercase tracking-[0.2em]">
                     {(["common", "rare", "epic", "legendary", "mythic"] as Rarity[]).map((r) => (
-                      <span key={r} className="rounded-full px-2 py-1" style={{ color: RARITY_COLOR[r], border: `1px solid ${RARITY_COLOR[r]}55` }}>{r}</span>
+                      <span
+                        key={r}
+                        className="rounded-full px-2 py-1"
+                        style={{ color: RARITY_COLOR[r], border: `1px solid ${RARITY_COLOR[r]}55` }}
+                      >
+                        {r}
+                      </span>
                     ))}
                   </div>
                   <button
@@ -1866,7 +3083,9 @@ export default function NeonRush() {
               <div>
                 <div className="mb-2 flex items-center justify-between text-xs uppercase tracking-[0.2em]">
                   <span className="text-glow-yellow">🪙 {prog.coins}</span>
-                  <span className="text-glow-cyan">{tr("slots")} · {loadout.length}/{MAX_LOADOUT}</span>
+                  <span className="text-glow-cyan">
+                    {tr("slots")} · {loadout.length}/{MAX_LOADOUT}
+                  </span>
                 </div>
                 <p className="mb-3 text-[11px] text-muted-foreground">{tr("powerupsDesc")}</p>
                 <div className="mb-4 grid grid-cols-5 gap-2">
@@ -1878,7 +3097,11 @@ export default function NeonRush() {
                         key={i}
                         onClick={() => id && togglePerk(id)}
                         className="aspect-square rounded-xl border flex flex-col items-center justify-center text-lg transition hover:scale-105"
-                        style={{ borderColor: pk ? `${pk.color}88` : "rgba(255,255,255,0.12)", background: pk ? `${pk.color}18` : "rgba(0,0,0,0.3)", color: pk?.color ?? undefined }}
+                        style={{
+                          borderColor: pk ? `${pk.color}88` : "rgba(255,255,255,0.12)",
+                          background: pk ? `${pk.color}18` : "rgba(0,0,0,0.3)",
+                          color: pk?.color ?? undefined,
+                        }}
                         title={pk ? tr("unequip") : tr("slotEmpty")}
                       >
                         <span>{pk?.icon ?? "+"}</span>
@@ -1893,15 +3116,42 @@ export default function NeonRush() {
                     const equipped = loadout.includes(pk.id);
                     const have = (prog.stats ?? {})[pk.req.stat] ?? 0;
                     return (
-                      <div key={pk.id} className={`rounded-xl border p-3 ${unlocked ? "" : "opacity-60"}`} style={{ borderColor: `${pk.color}55`, background: `linear-gradient(180deg, ${pk.color}10, rgba(0,0,0,0.35))` }}>
+                      <div
+                        key={pk.id}
+                        className={`rounded-xl border p-3 ${unlocked ? "" : "opacity-60"}`}
+                        style={{
+                          borderColor: `${pk.color}55`,
+                          background: `linear-gradient(180deg, ${pk.color}10, rgba(0,0,0,0.35))`,
+                        }}
+                      >
                         <div className="flex items-start gap-3">
-                          <div className="grid h-10 w-10 shrink-0 place-items-center rounded-lg text-lg" style={{ background: `${pk.color}20`, color: pk.color, boxShadow: `0 0 16px ${pk.color}55` }}>{pk.icon}</div>
+                          <div
+                            className="grid h-10 w-10 shrink-0 place-items-center rounded-lg text-lg"
+                            style={{
+                              background: `${pk.color}20`,
+                              color: pk.color,
+                              boxShadow: `0 0 16px ${pk.color}55`,
+                            }}
+                          >
+                            {pk.icon}
+                          </div>
                           <div className="min-w-0 flex-1">
-                            <div className="text-xs font-bold uppercase tracking-[0.2em]" style={{ color: pk.color }}>{tr(pk.nameKey)}</div>
-                            <div className="mt-1 text-[11px] text-muted-foreground">{tr(pk.descKey)}</div>
+                            <div
+                              className="text-xs font-bold uppercase tracking-[0.2em]"
+                              style={{ color: pk.color }}
+                            >
+                              {tr(pk.nameKey)}
+                            </div>
+                            <div className="mt-1 text-[11px] text-muted-foreground">
+                              {tr(pk.descKey)}
+                            </div>
                             {!unlocked && (
                               <div className="mt-1 text-[10px] uppercase tracking-[0.15em] text-glow-magenta">
-                                🔒 {tr("unlockCond")} · {Math.min(have, pk.req.target)}/{pk.req.target} {tr(`st${pk.req.stat.charAt(0).toUpperCase()}${pk.req.stat.slice(1)}`)}
+                                🔒 {tr("unlockCond")} · {Math.min(have, pk.req.target)}/
+                                {pk.req.target}{" "}
+                                {tr(
+                                  `st${pk.req.stat.charAt(0).toUpperCase()}${pk.req.stat.slice(1)}`,
+                                )}
                               </div>
                             )}
                           </div>
@@ -1910,7 +3160,13 @@ export default function NeonRush() {
                             disabled={!unlocked || (!owns && prog.coins < pk.cost)}
                             className={`shrink-0 rounded-lg px-3 py-2 text-[10px] font-bold uppercase tracking-widest transition ${equipped ? "bg-[color:var(--neon-cyan)]/20 text-glow-cyan" : owns ? "bg-black/40 text-glow-magenta hover:scale-105" : unlocked ? "bg-black/40 text-glow-yellow hover:scale-105" : "bg-black/40 text-muted-foreground"}`}
                           >
-                            {equipped ? tr("equipped") : owns ? tr("equip") : !unlocked ? tr("perkLocked") : `${pk.cost} 🪙`}
+                            {equipped
+                              ? tr("equipped")
+                              : owns
+                                ? tr("equip")
+                                : !unlocked
+                                  ? tr("perkLocked")
+                                  : `${pk.cost} 🪙`}
                           </button>
                         </div>
                       </div>
@@ -1924,32 +3180,56 @@ export default function NeonRush() {
               <div>
                 <div className="mb-3">
                   <div className="flex items-center justify-between text-[10px] uppercase tracking-[0.2em]">
-                    <span className="text-glow-cyan">{tr("tier")} {passTier}/{PASS_TIERS}</span>
+                    <span className="text-glow-cyan">
+                      {tr("tier")} {passTier}/{PASS_TIERS}
+                    </span>
                     <span className="text-glow-yellow">{prog.xp} XP</span>
                   </div>
                   <div className="mt-1 h-2 w-full rounded-full bg-black/40 overflow-hidden">
-                    <div className="h-full bg-gradient-to-r from-[color:var(--neon-cyan)] to-[color:var(--neon-magenta)]" style={{ width: `${passProgressPct}%` }} />
+                    <div
+                      className="h-full bg-gradient-to-r from-[color:var(--neon-cyan)] to-[color:var(--neon-magenta)]"
+                      style={{ width: `${passProgressPct}%` }}
+                    />
                   </div>
-                  <div className="mt-2 text-[10px] uppercase tracking-[0.2em] text-muted-foreground text-center">{tr("passTier100")}</div>
+                  <div className="mt-2 text-[10px] uppercase tracking-[0.2em] text-muted-foreground text-center">
+                    {tr("passTier100")}
+                  </div>
                 </div>
-                <div ref={passListRef} className="grid grid-cols-2 gap-2 max-h-[50vh] overflow-y-auto">
+                <div
+                  ref={passListRef}
+                  className="grid grid-cols-2 gap-2 max-h-[50vh] overflow-y-auto"
+                >
                   {PASS_REWARDS.map((r, i) => {
                     const unlocked = i < passTier;
                     const claimed = prog.claimed.includes(i);
                     const isFinal = i === PASS_TIERS - 1;
                     const isCurrent = i === Math.min(passTier, PASS_TIERS - 1);
                     const label =
-                      r.type === "coins" ? `${r.value} 🪙` :
-                      r.type === "xp" ? `+${r.value} XP` :
-                      r.type === "chest" ? `🎁 ×${r.value}` :
-                      `✨ ${r.value}`;
+                      r.type === "coins"
+                        ? `${r.value} 🪙`
+                        : r.type === "xp"
+                          ? `+${r.value} XP`
+                          : r.type === "chest"
+                            ? `🎁 ×${r.value}`
+                            : `✨ ${r.value}`;
                     return (
-                      <div key={i} data-tier={i} className={`rounded-xl border p-3 text-center ${isFinal ? "border-[color:var(--neon-magenta)] bg-[color:var(--neon-magenta)]/10" : unlocked ? "border-[color:var(--neon-cyan)]/60 bg-[color:var(--neon-cyan)]/10" : "border-border/40 bg-black/20 opacity-60"} ${isCurrent ? "ring-2 ring-[color:var(--neon-yellow)]" : ""}`}>
+                      <div
+                        key={i}
+                        data-tier={i}
+                        className={`rounded-xl border p-3 text-center ${isFinal ? "border-[color:var(--neon-magenta)] bg-[color:var(--neon-magenta)]/10" : unlocked ? "border-[color:var(--neon-cyan)]/60 bg-[color:var(--neon-cyan)]/10" : "border-border/40 bg-black/20 opacity-60"} ${isCurrent ? "ring-2 ring-[color:var(--neon-yellow)]" : ""}`}
+                      >
                         <div className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
-                          {tr("tier")} {i + 1}{isFinal ? ` · ${tr("exclusive")}` : ""}
+                          {tr("tier")} {i + 1}
+                          {isFinal ? ` · ${tr("exclusive")}` : ""}
                         </div>
-                        <div className="mt-1 font-display text-sm font-bold text-glow-yellow">{label}</div>
-                        <button onClick={() => claimTier(i)} disabled={!unlocked || claimed} className={`mt-2 w-full rounded-lg px-2 py-1 text-[10px] font-bold uppercase tracking-widest ${claimed ? "bg-black/30 text-muted-foreground" : unlocked ? "bg-[color:var(--neon-magenta)]/20 text-glow-magenta hover:scale-105 transition" : "bg-black/30 text-muted-foreground"}`}>
+                        <div className="mt-1 font-display text-sm font-bold text-glow-yellow">
+                          {label}
+                        </div>
+                        <button
+                          onClick={() => claimTier(i)}
+                          disabled={!unlocked || claimed}
+                          className={`mt-2 w-full rounded-lg px-2 py-1 text-[10px] font-bold uppercase tracking-widest ${claimed ? "bg-black/30 text-muted-foreground" : unlocked ? "bg-[color:var(--neon-magenta)]/20 text-glow-magenta hover:scale-105 transition" : "bg-black/30 text-muted-foreground"}`}
+                        >
                           {claimed ? tr("claimed") : unlocked ? tr("claim") : tr("locked")}
                         </button>
                       </div>
@@ -1963,24 +3243,43 @@ export default function NeonRush() {
               <div className="space-y-4 max-h-[65vh] overflow-y-auto">
                 {(["daily", "weekly"] as const).map((bucket) => (
                   <div key={bucket}>
-                    <div className="mb-2 text-xs uppercase tracking-[0.3em] text-glow-cyan">{tr(bucket)}</div>
+                    <div className="mb-2 text-xs uppercase tracking-[0.3em] text-glow-cyan">
+                      {tr(bucket)}
+                    </div>
                     <div className="space-y-2">
                       {prog.missions[bucket].list.map((m) => {
-                        const tpl = findTemplate(m.id); if (!tpl) return null;
+                        const tpl = findTemplate(m.id);
+                        if (!tpl) return null;
                         const pct = Math.min(100, (m.progress / tpl.target) * 100);
                         const ready = m.progress >= tpl.target && !m.claimed;
                         return (
-                          <div key={m.id} className="rounded-xl border border-border/50 bg-black/30 p-3">
+                          <div
+                            key={m.id}
+                            className="rounded-xl border border-border/50 bg-black/30 p-3"
+                          >
                             <div className="flex items-start justify-between gap-2">
-                              <div className="text-xs font-bold uppercase tracking-widest text-glow-cyan">{tr(tpl.titleKey)}</div>
-                              <div className="text-[10px] uppercase tracking-[0.2em] text-glow-yellow whitespace-nowrap">+{tpl.coins}🪙 · +{tpl.xp}XP</div>
+                              <div className="text-xs font-bold uppercase tracking-widest text-glow-cyan">
+                                {tr(tpl.titleKey)}
+                              </div>
+                              <div className="text-[10px] uppercase tracking-[0.2em] text-glow-yellow whitespace-nowrap">
+                                +{tpl.coins}🪙 · +{tpl.xp}XP
+                              </div>
                             </div>
                             <div className="mt-2 h-2 w-full rounded-full bg-black/40 overflow-hidden">
-                              <div className="h-full bg-gradient-to-r from-[color:var(--neon-cyan)] to-[color:var(--neon-magenta)]" style={{ width: `${pct}%` }} />
+                              <div
+                                className="h-full bg-gradient-to-r from-[color:var(--neon-cyan)] to-[color:var(--neon-magenta)]"
+                                style={{ width: `${pct}%` }}
+                              />
                             </div>
                             <div className="mt-1 flex items-center justify-between text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
-                              <span>{Math.floor(m.progress)}/{tpl.target}</span>
-                              <button onClick={() => claimMission(m.id)} disabled={!ready} className={`rounded-lg px-2 py-1 font-bold ${m.claimed ? "bg-black/30 text-muted-foreground" : ready ? "bg-[color:var(--neon-magenta)]/20 text-glow-magenta hover:scale-105 transition" : "bg-black/30 text-muted-foreground"}`}>
+                              <span>
+                                {Math.floor(m.progress)}/{tpl.target}
+                              </span>
+                              <button
+                                onClick={() => claimMission(m.id)}
+                                disabled={!ready}
+                                className={`rounded-lg px-2 py-1 font-bold ${m.claimed ? "bg-black/30 text-muted-foreground" : ready ? "bg-[color:var(--neon-magenta)]/20 text-glow-magenta hover:scale-105 transition" : "bg-black/30 text-muted-foreground"}`}
+                              >
                                 {m.claimed ? tr("claimed") : ready ? tr("claim") : tr("locked")}
                               </button>
                             </div>
@@ -1997,59 +3296,107 @@ export default function NeonRush() {
               <div>
                 <div className="mb-3 grid grid-cols-3 gap-1 text-[10px] uppercase tracking-[0.2em]">
                   {MODES.map((m) => (
-                    <button key={m.id} onClick={() => setLbMode(m.id)} className={`rounded-lg py-2 font-bold ${lbMode === m.id ? "bg-[color:var(--neon-cyan)]/20 text-glow-cyan" : "bg-black/30 text-muted-foreground"}`}>
+                    <button
+                      key={m.id}
+                      onClick={() => setLbMode(m.id)}
+                      className={`rounded-lg py-2 font-bold ${lbMode === m.id ? "bg-[color:var(--neon-cyan)]/20 text-glow-cyan" : "bg-black/30 text-muted-foreground"}`}
+                    >
                       {tr(m.nameKey)}
                     </button>
                   ))}
                 </div>
-                {!user && <div className="mb-2 text-center text-[10px] uppercase tracking-[0.2em] text-glow-magenta">{tr("signInToRank")}</div>}
-                {myRank && (
-                  <div className="mb-3 rounded-xl border border-[color:var(--neon-magenta)]/60 bg-[color:var(--neon-magenta)]/10 p-3 text-center">
-                    <div className="text-[10px] uppercase tracking-[0.3em] text-muted-foreground">{tr("myRank")}</div>
-                    <div className="font-display text-2xl font-black text-glow-magenta">#{myRank.rank ?? "—"} <span className="text-sm text-muted-foreground">/ {myRank.total}</span></div>
-                    <div className="text-[10px] uppercase tracking-[0.2em] text-glow-yellow">{myRank.score} pts</div>
+                {!user && (
+                  <div className="mb-2 text-center text-[10px] uppercase tracking-[0.2em] text-glow-magenta">
+                    {tr("signInToRank")}
                   </div>
                 )}
-                <div className="text-[10px] uppercase tracking-[0.2em] text-glow-cyan text-center mb-2">🌍 {tr("top100")} · <span className="text-glow-yellow">● {tr("liveUpdates")}</span></div>
+                {myRank && (
+                  <div className="mb-3 rounded-xl border border-[color:var(--neon-magenta)]/60 bg-[color:var(--neon-magenta)]/10 p-3 text-center">
+                    <div className="text-[10px] uppercase tracking-[0.3em] text-muted-foreground">
+                      {tr("myRank")}
+                    </div>
+                    <div className="font-display text-2xl font-black text-glow-magenta">
+                      #{myRank.rank ?? "—"}{" "}
+                      <span className="text-sm text-muted-foreground">/ {myRank.total}</span>
+                    </div>
+                    <div className="text-[10px] uppercase tracking-[0.2em] text-glow-yellow">
+                      {myRank.score} pts
+                    </div>
+                  </div>
+                )}
+                <div className="text-[10px] uppercase tracking-[0.2em] text-glow-cyan text-center mb-2">
+                  🌍 {tr("top100")} ·{" "}
+                  <span className="text-glow-yellow">● {tr("liveUpdates")}</span>
+                </div>
                 <div className="space-y-1 max-h-[45vh] overflow-y-auto">
-                  {lbLoading && lbRows.length === 0 && <div className="text-center text-xs text-muted-foreground py-4">…</div>}
+                  {lbLoading && lbRows.length === 0 && (
+                    <div className="text-center text-xs text-muted-foreground py-4">…</div>
+                  )}
                   {lbRows.map((row, idx) => {
                     const isMe = user?.id === row.user_id;
                     return (
-                    <div key={`${lbMode}-${idx}-${row.guest ? "g" : "a"}-${row.user_id ?? row.display_name}`} className={`flex items-center justify-between rounded-lg border px-3 py-2 ${isMe ? "border-[color:var(--neon-cyan)] bg-[color:var(--neon-cyan)]/10" : "border-border/40 bg-black/20"}`}>
+                      <div
+                        key={`${lbMode}-${idx}-${row.guest ? "g" : "a"}-${row.user_id ?? row.display_name}`}
+                        className={`flex items-center justify-between rounded-lg border px-3 py-2 ${isMe ? "border-[color:var(--neon-cyan)] bg-[color:var(--neon-cyan)]/10" : "border-border/40 bg-black/20"}`}
+                      >
                         <div className="flex items-center gap-2 min-w-0">
-                          <span className={`font-display font-black text-sm w-8 ${idx === 0 ? "text-glow-yellow" : idx < 3 ? "text-glow-magenta" : "text-muted-foreground"}`}>#{idx + 1}</span>
-                          <span className="text-xs font-bold uppercase tracking-widest truncate">{row.display_name || "Anon"}</span>
+                          <span
+                            className={`font-display font-black text-sm w-8 ${idx === 0 ? "text-glow-yellow" : idx < 3 ? "text-glow-magenta" : "text-muted-foreground"}`}
+                          >
+                            #{idx + 1}
+                          </span>
+                          <span className="text-xs font-bold uppercase tracking-widest truncate">
+                            {row.display_name || "Anon"}
+                          </span>
                         </div>
-                        <span className="font-display font-black text-glow-cyan tabular-nums">{row.score}</span>
+                        <span className="font-display font-black text-glow-cyan tabular-nums">
+                          {row.score}
+                        </span>
                       </div>
                     );
                   })}
-                  {!lbLoading && lbRows.length === 0 && <div className="text-center text-xs text-muted-foreground py-4">—</div>}
+                  {!lbLoading && lbRows.length === 0 && (
+                    <div className="text-center text-xs text-muted-foreground py-4">—</div>
+                  )}
                 </div>
               </div>
             )}
 
-
             {panel === "ranked" && (
               <div className="space-y-2">
                 <div className="text-center mb-2">
-                  <div className="text-[10px] uppercase tracking-[0.3em] text-muted-foreground">{tr("rank")}</div>
-                  <div className="font-display text-3xl font-black" style={{ color: rank.color, textShadow: `0 0 20px ${rank.color}` }}>{rank.name}</div>
+                  <div className="text-[10px] uppercase tracking-[0.3em] text-muted-foreground">
+                    {tr("rank")}
+                  </div>
+                  <div
+                    className="font-display text-3xl font-black"
+                    style={{ color: rank.color, textShadow: `0 0 20px ${rank.color}` }}
+                  >
+                    {rank.name}
+                  </div>
                 </div>
                 {RANKS.map((rk) => {
                   const achieved = globalBest >= rk.min;
                   return (
-                    <div key={rk.name} className={`flex items-center justify-between rounded-lg border p-3 ${achieved ? "border-[color:var(--neon-cyan)]/60 bg-[color:var(--neon-cyan)]/10" : "border-border/40 bg-black/20 opacity-60"}`}>
-                      <span className="font-display font-bold uppercase tracking-widest" style={{ color: rk.color }}>{rk.name}</span>
-                      <span className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">≥ {rk.min}</span>
+                    <div
+                      key={rk.name}
+                      className={`flex items-center justify-between rounded-lg border p-3 ${achieved ? "border-[color:var(--neon-cyan)]/60 bg-[color:var(--neon-cyan)]/10" : "border-border/40 bg-black/20 opacity-60"}`}
+                    >
+                      <span
+                        className="font-display font-bold uppercase tracking-widest"
+                        style={{ color: rk.color }}
+                      >
+                        {rk.name}
+                      </span>
+                      <span className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+                        ≥ {rk.min}
+                      </span>
                     </div>
                   );
                 })}
                 <div className="mt-3 text-[10px] uppercase tracking-[0.2em] text-muted-foreground text-center">
                   {tr("best")}: {globalBest}
                 </div>
-
               </div>
             )}
 
@@ -2060,7 +3407,12 @@ export default function NeonRush() {
                 signedIn={!!user}
                 code={duoCode}
                 setCode={setDuoCode}
-                onCopy={(c) => { navigator.clipboard?.writeText(c).catch(() => { /* noop */ }); showToast(tr("duoCopied")); }}
+                onCopy={(c) => {
+                  navigator.clipboard?.writeText(c).catch(() => {
+                    /* noop */
+                  });
+                  showToast(tr("duoCopied"));
+                }}
                 teamRecord={prog.duoBest ?? 0}
                 onClose={() => setPanel(null)}
               />
@@ -2068,22 +3420,142 @@ export default function NeonRush() {
 
             {panel === "settings" && (
               <div>
-                <div className="text-xs uppercase tracking-[0.2em] text-muted-foreground mb-2">{tr("language")}</div>
+                <div className="text-xs uppercase tracking-[0.2em] text-muted-foreground mb-2">
+                  {tr("language")}
+                </div>
                 <div className="grid grid-cols-3 gap-2">
                   {LANGS.map((l) => (
-                    <button key={l.code} onClick={() => setLang(l.code)} className={`rounded-xl border p-3 transition ${lang === l.code ? "border-[color:var(--neon-cyan)] bg-[color:var(--neon-cyan)]/10" : "border-border/50 bg-black/20 hover:border-[color:var(--neon-magenta)]"}`}>
+                    <button
+                      key={l.code}
+                      onClick={() => setLang(l.code)}
+                      className={`rounded-xl border p-3 transition ${lang === l.code ? "border-[color:var(--neon-cyan)] bg-[color:var(--neon-cyan)]/10" : "border-border/50 bg-black/20 hover:border-[color:var(--neon-magenta)]"}`}
+                    >
                       <div className="text-2xl">{l.flag}</div>
-                      <div className="mt-1 text-[11px] font-bold uppercase tracking-widest text-glow-cyan">{l.label}</div>
+                      <div className="mt-1 text-[11px] font-bold uppercase tracking-widest text-glow-cyan">
+                        {l.label}
+                      </div>
                     </button>
                   ))}
                 </div>
-                <div className="mt-4 text-xs uppercase tracking-[0.2em] text-muted-foreground mb-2">{tr("sound")}</div>
-                <button onClick={() => setMuted(m => !m)} className="w-full panel-neon rounded-lg py-2 text-xs uppercase tracking-widest text-glow-yellow">
+                <div className="mt-4 text-xs uppercase tracking-[0.2em] text-muted-foreground mb-2">
+                  {tr("sound")}
+                </div>
+                <button
+                  onClick={() => setMuted((m) => !m)}
+                  className="w-full panel-neon rounded-lg py-2 text-xs uppercase tracking-widest text-glow-yellow"
+                >
                   {muted ? `🔇 ${tr("muted")}` : `🔊 ${tr("sound")}`}
+                </button>
+                <button
+                  onClick={() => setTutorialVisible(true)}
+                  className="mt-3 w-full panel-neon rounded-lg py-2 text-xs uppercase tracking-widest text-glow-cyan"
+                >
+                  {tr("tutorialReplay")}
                 </button>
               </div>
             )}
           </div>
+        </div>
+      )}
+      {tutorialVisible && (
+        <div
+          className="tutorial-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="tutorial-title"
+        >
+          <div className="tutorial-card panel-neon">
+            <div className="text-[10px] uppercase tracking-[0.35em] text-glow-cyan">NEON RUSH</div>
+            <h2
+              id="tutorial-title"
+              className="mt-2 font-display text-2xl font-black uppercase tracking-[0.12em] text-glow-magenta"
+            >
+              {tr("tutorialTitle")}
+            </h2>
+            <p className="mt-2 text-sm text-muted-foreground">{tr("tutorialIntro")}</p>
+            <ol className="mt-5 space-y-3 text-left">
+              {[
+                ["⌖", "tutorialMove"],
+                ["✦", "tutorialCollect"],
+                ["⚡", "tutorialCombo"],
+              ].map(([icon, key], index) => (
+                <li key={key} className="flex items-start gap-3 rounded-xl bg-black/25 p-3">
+                  <span className="font-display text-xl font-black text-glow-cyan">{icon}</span>
+                  <span>
+                    <span className="text-[10px] uppercase tracking-[0.2em] text-glow-yellow">
+                      {index + 1}
+                    </span>
+                    <span className="mt-1 block text-xs leading-relaxed text-foreground/90">
+                      {tr(key)}
+                    </span>
+                  </span>
+                </li>
+              ))}
+            </ol>
+            <button
+              autoFocus
+              onClick={() => {
+                if (tutorialPendingRef.current) {
+                  try {
+                    localStorage.setItem(TUTORIAL_KEY, "1");
+                  } catch (error) {
+                    console.error("Could not save the first-visit tutorial preference.", error);
+                  }
+                  tutorialPendingRef.current = false;
+                }
+                setTutorialVisible(false);
+              }}
+              className="mt-5 w-full rounded-xl border border-[color:var(--neon-cyan)] bg-gradient-to-r from-[color:var(--neon-cyan)]/20 to-[color:var(--neon-magenta)]/20 px-5 py-3 font-display text-sm font-black uppercase tracking-[0.25em] text-glow-cyan transition hover:scale-[1.02]"
+            >
+              {tr("tutorialContinue")}
+            </button>
+          </div>
+        </div>
+      )}
+      {introVisible && (
+        <div className="neon-intro" aria-label="NEON RUSH">
+          <div className="neon-intro__stars" aria-hidden="true">
+            {Array.from({ length: 16 }, (_, i) => (
+              <i key={i} />
+            ))}
+          </div>
+          <div className="neon-intro__grid" aria-hidden="true" />
+          <div className="neon-intro__portal" aria-hidden="true">
+            <span />
+            <span />
+            <span />
+          </div>
+          <div className="neon-intro__content">
+            <img className="neon-intro__emblem" src="/icon-512.png" alt="" />
+            <p className="neon-intro__eyebrow">{tr("tagline")}</p>
+            <h1 className="neon-intro__title">
+              <span>NEON</span> <strong>RUSH</strong>
+            </h1>
+            <div className="neon-intro__laser" aria-hidden="true">
+              <span />
+            </div>
+            <p className="neon-intro__ready">
+              {lang === "fr"
+                ? "PRÊT À JOUER"
+                : lang === "es"
+                  ? "LISTO PARA JUGAR"
+                  : "READY TO PLAY"}
+            </p>
+          </div>
+          <button
+            className="neon-intro__skip"
+            onClick={finishIntro}
+            aria-label={
+              lang === "fr"
+                ? "Passer l’introduction"
+                : lang === "es"
+                  ? "Saltar introducción"
+                  : "Skip intro"
+            }
+          >
+            {lang === "fr" ? "PASSER L’INTRO" : lang === "es" ? "SALTAR INTRO" : "SKIP INTRO"}
+            <span aria-hidden="true">↗</span>
+          </button>
         </div>
       )}
     </main>

@@ -2,7 +2,13 @@
  * Petit rond rouge de notification, façon application mobile.
  * `count` = 0 → simple point ; sinon chiffre (99+ au-delà).
  */
-export default function NotifBadge({ count = 0, className = "" }: { count?: number; className?: string }) {
+export default function NotifBadge({
+  count = 0,
+  className = "",
+}: {
+  count?: number;
+  className?: string;
+}) {
   const label = count > 99 ? "99+" : count > 0 ? String(count) : "";
   return (
     <span

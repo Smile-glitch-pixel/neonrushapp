@@ -7,8 +7,16 @@
 import type { Stats, StatKey } from "./economy";
 
 export type PerkId =
-  | "start_shield" | "magnet_core" | "combo_keeper" | "score_boost" | "second_wind"
-  | "slow_start" | "power_hunter" | "lucky_orbs" | "guardian" | "hazard_shrink";
+  | "start_shield"
+  | "magnet_core"
+  | "combo_keeper"
+  | "score_boost"
+  | "second_wind"
+  | "slow_start"
+  | "power_hunter"
+  | "lucky_orbs"
+  | "guardian"
+  | "hazard_shrink";
 
 export type Perk = {
   id: PerkId;
@@ -30,19 +38,105 @@ export const MAX_LOADOUT = 5;
 export const PERK_COST = 10000;
 
 export const PERKS: Perk[] = [
-  { id: "start_shield",  icon: "⛨",  color: "#a0ffea", nameKey: "pkStartShield",  descKey: "pkStartShieldD",  cost: PERK_COST, req: { stat: "runs",       target: 60 } },
-  { id: "magnet_core",   icon: "◎",  color: "#ffb36b", nameKey: "pkMagnetCore",   descKey: "pkMagnetCoreD",   cost: PERK_COST, req: { stat: "orbs",       target: 4000 } },
-  { id: "combo_keeper",  icon: "∞",  color: "#fff17a", nameKey: "pkComboKeeper",  descKey: "pkComboKeeperD",  cost: PERK_COST, req: { stat: "bestCombo",  target: 40 } },
-  { id: "score_boost",   icon: "▲",  color: "#7bf3ff", nameKey: "pkScoreBoost",   descKey: "pkScoreBoostD",   cost: PERK_COST, req: { stat: "bestScore",  target: 12000 } },
-  { id: "second_wind",   icon: "✚",  color: "#ff8ad1", nameKey: "pkSecondWind",   descKey: "pkSecondWindD",   cost: PERK_COST, req: { stat: "bestScore",  target: 25000 } },
-  { id: "slow_start",    icon: "⏱",  color: "#c39bff", nameKey: "pkSlowStart",    descKey: "pkSlowStartD",    cost: PERK_COST, req: { stat: "runs",       target: 200 } },
-  { id: "power_hunter",  icon: "✦",  color: "#a8ff5c", nameKey: "pkPowerHunter",  descKey: "pkPowerHunterD",  cost: PERK_COST, req: { stat: "powers",     target: 300 } },
-  { id: "lucky_orbs",    icon: "🍀", color: "#8affc1", nameKey: "pkLuckyOrbs",    descKey: "pkLuckyOrbsD",    cost: PERK_COST, req: { stat: "chests",     target: 25 } },
-  { id: "guardian",      icon: "🤝", color: "#ff7bd1", nameKey: "pkGuardian",     descKey: "pkGuardianD",     cost: PERK_COST, req: { stat: "revives",    target: 25 } },
-  { id: "hazard_shrink", icon: "◇",  color: "#c8d0e0", nameKey: "pkHazardShrink", descKey: "pkHazardShrinkD", cost: PERK_COST, req: { stat: "duoRuns",    target: 30 } },
+  {
+    id: "start_shield",
+    icon: "⛨",
+    color: "#a0ffea",
+    nameKey: "pkStartShield",
+    descKey: "pkStartShieldD",
+    cost: PERK_COST,
+    req: { stat: "runs", target: 60 },
+  },
+  {
+    id: "magnet_core",
+    icon: "◎",
+    color: "#ffb36b",
+    nameKey: "pkMagnetCore",
+    descKey: "pkMagnetCoreD",
+    cost: PERK_COST,
+    req: { stat: "orbs", target: 4000 },
+  },
+  {
+    id: "combo_keeper",
+    icon: "∞",
+    color: "#fff17a",
+    nameKey: "pkComboKeeper",
+    descKey: "pkComboKeeperD",
+    cost: PERK_COST,
+    req: { stat: "bestCombo", target: 40 },
+  },
+  {
+    id: "score_boost",
+    icon: "▲",
+    color: "#7bf3ff",
+    nameKey: "pkScoreBoost",
+    descKey: "pkScoreBoostD",
+    cost: PERK_COST,
+    req: { stat: "bestScore", target: 12000 },
+  },
+  {
+    id: "second_wind",
+    icon: "✚",
+    color: "#ff8ad1",
+    nameKey: "pkSecondWind",
+    descKey: "pkSecondWindD",
+    cost: PERK_COST,
+    req: { stat: "bestScore", target: 25000 },
+  },
+  {
+    id: "slow_start",
+    icon: "⏱",
+    color: "#c39bff",
+    nameKey: "pkSlowStart",
+    descKey: "pkSlowStartD",
+    cost: PERK_COST,
+    req: { stat: "runs", target: 200 },
+  },
+  {
+    id: "power_hunter",
+    icon: "✦",
+    color: "#a8ff5c",
+    nameKey: "pkPowerHunter",
+    descKey: "pkPowerHunterD",
+    cost: PERK_COST,
+    req: { stat: "powers", target: 300 },
+  },
+  {
+    id: "lucky_orbs",
+    icon: "🍀",
+    color: "#8affc1",
+    nameKey: "pkLuckyOrbs",
+    descKey: "pkLuckyOrbsD",
+    cost: PERK_COST,
+    req: { stat: "chests", target: 25 },
+  },
+  {
+    id: "guardian",
+    icon: "🤝",
+    color: "#ff7bd1",
+    nameKey: "pkGuardian",
+    descKey: "pkGuardianD",
+    cost: PERK_COST,
+    req: { stat: "revives", target: 25 },
+  },
+  {
+    id: "hazard_shrink",
+    icon: "◇",
+    color: "#c8d0e0",
+    nameKey: "pkHazardShrink",
+    descKey: "pkHazardShrinkD",
+    cost: PERK_COST,
+    req: { stat: "duoRuns", target: 30 },
+  },
 ];
 
-export const PERK_MAP: Record<PerkId, Perk> = PERKS.reduce((a, p) => { a[p.id] = p; return a; }, {} as Record<PerkId, Perk>);
+export const PERK_MAP: Record<PerkId, Perk> = PERKS.reduce(
+  (a, p) => {
+    a[p.id] = p;
+    return a;
+  },
+  {} as Record<PerkId, Perk>,
+);
 
 export const findPerk = (id: string) => PERKS.find((p) => p.id === id);
 
@@ -70,24 +164,52 @@ export type Loadout = {
 };
 
 export const emptyLoadout = (): Loadout => ({
-  startShield: false, magnetCore: false, comboKeeper: false, scoreBoost: false, secondWind: false,
-  slowStart: false, powerHunter: false, luckyOrbs: false, guardian: false, hazardShrink: false,
+  startShield: false,
+  magnetCore: false,
+  comboKeeper: false,
+  scoreBoost: false,
+  secondWind: false,
+  slowStart: false,
+  powerHunter: false,
+  luckyOrbs: false,
+  guardian: false,
+  hazardShrink: false,
 });
 
 export const buildLoadout = (ids: string[] | undefined): Loadout => {
   const l = emptyLoadout();
   for (const id of (ids ?? []).slice(0, MAX_LOADOUT)) {
     switch (id as PerkId) {
-      case "start_shield": l.startShield = true; break;
-      case "magnet_core": l.magnetCore = true; break;
-      case "combo_keeper": l.comboKeeper = true; break;
-      case "score_boost": l.scoreBoost = true; break;
-      case "second_wind": l.secondWind = true; break;
-      case "slow_start": l.slowStart = true; break;
-      case "power_hunter": l.powerHunter = true; break;
-      case "lucky_orbs": l.luckyOrbs = true; break;
-      case "guardian": l.guardian = true; break;
-      case "hazard_shrink": l.hazardShrink = true; break;
+      case "start_shield":
+        l.startShield = true;
+        break;
+      case "magnet_core":
+        l.magnetCore = true;
+        break;
+      case "combo_keeper":
+        l.comboKeeper = true;
+        break;
+      case "score_boost":
+        l.scoreBoost = true;
+        break;
+      case "second_wind":
+        l.secondWind = true;
+        break;
+      case "slow_start":
+        l.slowStart = true;
+        break;
+      case "power_hunter":
+        l.powerHunter = true;
+        break;
+      case "lucky_orbs":
+        l.luckyOrbs = true;
+        break;
+      case "guardian":
+        l.guardian = true;
+        break;
+      case "hazard_shrink":
+        l.hazardShrink = true;
+        break;
     }
   }
   return l;

@@ -56,20 +56,30 @@ export const fetchLeaderboard = createServerFn({ method: "GET" })
       { auth: { persistSession: false, autoRefreshToken: false } },
     );
     const [accounts, guests] = await Promise.all([
-      sb.from("leaderboard_scores")
+      sb
+        .from("leaderboard_scores")
         .select("user_id, mode, score, display_name, equipped_skin, updated_at")
-        .eq("mode", data.mode).order("score", { ascending: false }).limit(100),
-      sb.from("guest_scores")
+        .eq("mode", data.mode)
+        .order("score", { ascending: false })
+        .limit(100),
+      sb
+        .from("guest_scores")
         .select("mode, score, display_name, equipped_skin, updated_at")
-        .eq("mode", data.mode).order("score", { ascending: false }).limit(100),
+        .eq("mode", data.mode)
+        .order("score", { ascending: false })
+        .limit(100),
     ]);
     if (accounts.error) throw accounts.error;
     if (guests.error) throw guests.error;
 
     type Row = {
-      user_id: string | null; mode: string; score: number;
-      display_name: string | null; equipped_skin: string | null;
-      updated_at: string | null; guest: boolean;
+      user_id: string | null;
+      mode: string;
+      score: number;
+      display_name: string | null;
+      equipped_skin: string | null;
+      updated_at: string | null;
+      guest: boolean;
     };
     const rows: Row[] = [
       ...(accounts.data ?? []).map((r) => ({ ...r, guest: false }) as Row),
@@ -124,4 +134,3 @@ export const fetchMyBests = createServerFn({ method: "GET" })
     for (const r of data ?? []) out[r.mode] = Math.max(out[r.mode] ?? 0, r.score ?? 0);
     return out;
   });
-

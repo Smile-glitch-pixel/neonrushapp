@@ -1,14 +1,33 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { SKINS, PASS_REWARDS, PASS_TIERS, PASS_XP_PER_TIER, findTemplate } from "@/lib/neon-progression";
 import {
-  CHESTS, rollChest, findAchievement, achievementUnlocked, GEM_TO_COINS,
-  type ChestKind, type OfferContents, type StatKey, type Stats,
+  SKINS,
+  PASS_REWARDS,
+  PASS_TIERS,
+  PASS_XP_PER_TIER,
+  findTemplate,
+} from "@/lib/neon-progression";
+import {
+  CHESTS,
+  rollChest,
+  findAchievement,
+  achievementUnlocked,
+  GEM_TO_COINS,
+  type ChestKind,
+  type OfferContents,
+  type StatKey,
+  type Stats,
 } from "@/lib/economy";
 import { loadEconomy, saveEconomy, logEvent, grant } from "@/lib/economy.server";
 import {
-  findPerk, perkKey, perkUnlocked, MAX_LOADOUT, DAILY_CHEST_LIMIT, chestDayKey, msUntilChestReset,
+  findPerk,
+  perkKey,
+  perkUnlocked,
+  MAX_LOADOUT,
+  DAILY_CHEST_LIMIT,
+  chestDayKey,
+  msUntilChestReset,
 } from "@/lib/perks";
 
 /** État économique complet (source de vérité serveur). */
@@ -40,7 +59,10 @@ export const economyEquipSkin = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     let s = await loadEconomy(context.supabase, context.userId);
     if (!s.owned.includes(data.skinId as never)) return { state: s, ok: false as const };
-    s = await saveEconomy(context.supabase, context.userId, { ...s, equipped: data.skinId as never });
+    s = await saveEconomy(context.supabase, context.userId, {
+      ...s,
+      equipped: data.skinId as never,
+    });
     return { state: s, ok: true as const };
   });
 
@@ -51,7 +73,8 @@ export const economyEquipSkin = createServerFn({ method: "POST" })
 export const economyOpenChest = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((i: unknown) =>
-    z.object({ kind: z.enum(["coin", "gem"]), fromInventory: z.boolean().optional() }).parse(i))
+    z.object({ kind: z.enum(["coin", "gem"]), fromInventory: z.boolean().optional() }).parse(i),
+  )
   .handler(async ({ data, context }) => {
     const kind = data.kind as ChestKind;
     const cfg = CHESTS[kind];
@@ -81,19 +104,36 @@ export const economyOpenChest = createServerFn({ method: "POST" })
     s = grant(s, drop.type === "skin" ? { skins: [drop.skin] } : { coins: drop.coins });
     s = { ...s, stats: { ...s.stats, chests: (s.stats.chests ?? 0) + 1 } };
     s = await saveEconomy(context.supabase, context.userId, s);
-    await logEvent(context.supabase, context.userId, "chest", `${kind}:${useInv ? "inv" : "paid"}`, { ...drop });
+    await logEvent(
+      context.supabase,
+      context.userId,
+      "chest",
+      `${kind}:${useInv ? "inv" : "paid"}`,
+      { ...drop },
+    );
     return { state: s, ok: true as const, drop };
   });
 
 /** Réclame un palier de Battle Pass (validé par l'XP réellement enregistrée). */
 export const economyClaimPass = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((i: unknown) => z.object({ tier: z.number().int().min(0).max(PASS_TIERS - 1) }).parse(i))
+  .inputValidator((i: unknown) =>
+    z
+      .object({
+        tier: z
+          .number()
+          .int()
+          .min(0)
+          .max(PASS_TIERS - 1),
+      })
+      .parse(i),
+  )
   .handler(async ({ data, context }) => {
     let s = await loadEconomy(context.supabase, context.userId);
     const unlocked = Math.min(PASS_TIERS, Math.floor(s.xp / PASS_XP_PER_TIER));
     if (data.tier >= unlocked) return { state: s, ok: false as const, reason: "LOCKED" as const };
-    if (s.claimed.includes(data.tier)) return { state: s, ok: false as const, reason: "ALREADY" as const };
+    if (s.claimed.includes(data.tier))
+      return { state: s, ok: false as const, reason: "ALREADY" as const };
     const r = PASS_REWARDS[data.tier]!;
     s = { ...s, claimed: [...s.claimed, data.tier], pass_claimed: [...s.pass_claimed, data.tier] };
     if (r.type === "coins") s = grant(s, { coins: r.value as number });
@@ -103,7 +143,9 @@ export const economyClaimPass = createServerFn({ method: "POST" })
     // Bonus gemmes tous les 10 paliers pour alimenter l'économie premium.
     if ((data.tier + 1) % 10 === 0) s = grant(s, { gems: 15 });
     s = await saveEconomy(context.supabase, context.userId, s);
-    await logEvent(context.supabase, context.userId, "pass_claim", `tier:${data.tier}`, { reward: r });
+    await logEvent(context.supabase, context.userId, "pass_claim", `tier:${data.tier}`, {
+      reward: r,
+    });
     return { state: s, ok: true as const, reward: r };
   });
 
@@ -115,7 +157,10 @@ export const economyClaimMission = createServerFn({ method: "POST" })
     const tpl = findTemplate(data.id);
     if (!tpl) throw new Error("MISSION_UNKNOWN");
     const { data: row, error } = await context.supabase
-      .from("player_state").select("missions").eq("user_id", context.userId).maybeSingle();
+      .from("player_state")
+      .select("missions")
+      .eq("user_id", context.userId)
+      .maybeSingle();
     if (error) throw error;
     type M = { id: string; progress: number; claimed: boolean };
     type B = { seed: string; list: M[] };
@@ -137,10 +182,20 @@ export const economyClaimMission = createServerFn({ method: "POST" })
     if (!hit) return { state: s, ok: false as const, reason: "NOT_READY" as const };
     s = grant(s, { coins: tpl.coins, xp: tpl.xp });
     s = await saveEconomy(context.supabase, context.userId, s);
-    await context.supabase.from("player_state")
-      .update({ missions: nextMissions as never }).eq("user_id", context.userId);
-    await logEvent(context.supabase, context.userId, "mission_claim", data.id, { coins: tpl.coins, xp: tpl.xp });
-    return { state: s, ok: true as const, missions: nextMissions, reward: { coins: tpl.coins, xp: tpl.xp } };
+    await context.supabase
+      .from("player_state")
+      .update({ missions: nextMissions as never })
+      .eq("user_id", context.userId);
+    await logEvent(context.supabase, context.userId, "mission_claim", data.id, {
+      coins: tpl.coins,
+      xp: tpl.xp,
+    });
+    return {
+      state: s,
+      ok: true as const,
+      missions: nextMissions,
+      reward: { coins: tpl.coins, xp: tpl.xp },
+    };
   });
 
 /** Réclame un succès débloqué (statistiques cumulées serveur). */
@@ -151,22 +206,34 @@ export const economyClaimAchievement = createServerFn({ method: "POST" })
     const a = findAchievement(data.id);
     if (!a) throw new Error("ACHIEVEMENT_UNKNOWN");
     let s = await loadEconomy(context.supabase, context.userId);
-    if (s.achievements[a.id]?.claimed) return { state: s, ok: false as const, reason: "ALREADY" as const };
-    if (!achievementUnlocked(a, s.stats)) return { state: s, ok: false as const, reason: "LOCKED" as const };
-    s = grant({ ...s, achievements: { ...s.achievements, [a.id]: { claimed: true } } },
-      { coins: a.coins, gems: a.gems, xp: a.xp });
+    if (s.achievements[a.id]?.claimed)
+      return { state: s, ok: false as const, reason: "ALREADY" as const };
+    if (!achievementUnlocked(a, s.stats))
+      return { state: s, ok: false as const, reason: "LOCKED" as const };
+    s = grant(
+      { ...s, achievements: { ...s.achievements, [a.id]: { claimed: true } } },
+      { coins: a.coins, gems: a.gems, xp: a.xp },
+    );
     s = await saveEconomy(context.supabase, context.userId, s);
-    await logEvent(context.supabase, context.userId, "achievement", a.id, { coins: a.coins, gems: a.gems, xp: a.xp });
+    await logEvent(context.supabase, context.userId, "achievement", a.id, {
+      coins: a.coins,
+      gems: a.gems,
+      xp: a.xp,
+    });
     return { state: s, ok: true as const, reward: { coins: a.coins, gems: a.gems, xp: a.xp } };
   });
 
 /** Statistiques de fin de partie : fusion monotone (jamais de baisse). */
 export const economyTrackStats = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((i: unknown) => z.object({
-    add: z.record(z.string(), z.number().int().min(0).max(1_000_000)).optional(),
-    max: z.record(z.string(), z.number().int().min(0).max(10_000_000)).optional(),
-  }).parse(i))
+  .inputValidator((i: unknown) =>
+    z
+      .object({
+        add: z.record(z.string(), z.number().int().min(0).max(1_000_000)).optional(),
+        max: z.record(z.string(), z.number().int().min(0).max(10_000_000)).optional(),
+      })
+      .parse(i),
+  )
   .handler(async ({ data, context }) => {
     let s = await loadEconomy(context.supabase, context.userId);
     const stats: Stats = { ...s.stats };
@@ -200,7 +267,11 @@ export const economyBuyOffer = createServerFn({ method: "POST" })
   .inputValidator((i: unknown) => z.object({ offerId: z.string() }).parse(i))
   .handler(async ({ data, context }) => {
     const { data: offer, error } = await context.supabase
-      .from("store_offers").select("*").eq("id", data.offerId).eq("active", true).maybeSingle();
+      .from("store_offers")
+      .select("*")
+      .eq("id", data.offerId)
+      .eq("active", true)
+      .maybeSingle();
     if (error) throw error;
     let s = await loadEconomy(context.supabase, context.userId);
     if (!offer) return { state: s, ok: false as const, reason: "UNKNOWN" as const };
@@ -213,12 +284,25 @@ export const economyBuyOffer = createServerFn({ method: "POST" })
     const bal = offer.currency === "gems" ? s.gems : s.coins;
     if (bal < offer.price) return { state: s, ok: false as const, reason: "NOT_ENOUGH" as const };
     const c = (offer.contents as OfferContents | null) ?? {};
-    s = offer.currency === "gems" ? { ...s, gems: s.gems - offer.price } : { ...s, coins: s.coins - offer.price };
-    s = grant({ ...s, purchases: [...s.purchases, offer.id] }, {
-      coins: c.coins ?? 0, gems: c.gems ?? 0, coinChests: c.chests ?? 0, skins: c.skins ?? [],
-    });
+    s =
+      offer.currency === "gems"
+        ? { ...s, gems: s.gems - offer.price }
+        : { ...s, coins: s.coins - offer.price };
+    s = grant(
+      { ...s, purchases: [...s.purchases, offer.id] },
+      {
+        coins: c.coins ?? 0,
+        gems: c.gems ?? 0,
+        coinChests: c.chests ?? 0,
+        skins: c.skins ?? [],
+      },
+    );
     s = await saveEconomy(context.supabase, context.userId, s);
-    await logEvent(context.supabase, context.userId, "offer", offer.id, { price: offer.price, currency: offer.currency, contents: c });
+    await logEvent(context.supabase, context.userId, "offer", offer.id, {
+      price: offer.price,
+      currency: offer.currency,
+      contents: c,
+    });
     return { state: s, ok: true as const, contents: c };
   });
 
@@ -231,7 +315,9 @@ export const economyConvertGems = createServerFn({ method: "POST" })
     if (s.gems < data.gems) return { state: s, ok: false as const, reason: "NOT_ENOUGH" as const };
     s = grant({ ...s, gems: s.gems - data.gems }, { coins: data.gems * GEM_TO_COINS });
     s = await saveEconomy(context.supabase, context.userId, s);
-    await logEvent(context.supabase, context.userId, "convert_gems", `${data.gems}`, { coins: data.gems * GEM_TO_COINS });
+    await logEvent(context.supabase, context.userId, "convert_gems", `${data.gems}`, {
+      coins: data.gems * GEM_TO_COINS,
+    });
     return { state: s, ok: true as const, coins: data.gems * GEM_TO_COINS };
   });
 
@@ -245,8 +331,10 @@ export const economyBuyPerk = createServerFn({ method: "POST" })
     const p = findPerk(data.perkId);
     if (!p) throw new Error("PERK_UNKNOWN");
     let s = await loadEconomy(context.supabase, context.userId);
-    if (s.purchases.includes(perkKey(p.id))) return { state: s, ok: false as const, reason: "OWNED" as const };
-    if (!perkUnlocked(p, s.stats)) return { state: s, ok: false as const, reason: "LOCKED" as const };
+    if (s.purchases.includes(perkKey(p.id)))
+      return { state: s, ok: false as const, reason: "OWNED" as const };
+    if (!perkUnlocked(p, s.stats))
+      return { state: s, ok: false as const, reason: "LOCKED" as const };
     if (s.coins < p.cost) return { state: s, ok: false as const, reason: "NOT_ENOUGH" as const };
     s = { ...s, coins: s.coins - p.cost, purchases: [...s.purchases, perkKey(p.id)] };
     s = await saveEconomy(context.supabase, context.userId, s);
@@ -257,17 +345,27 @@ export const economyBuyPerk = createServerFn({ method: "POST" })
 /** Enregistre le chargement équipé (max 5, uniquement des perks possédés). */
 export const economySetLoadout = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((i: unknown) => z.object({ loadout: z.array(z.string()).max(MAX_LOADOUT) }).parse(i))
+  .inputValidator((i: unknown) =>
+    z.object({ loadout: z.array(z.string()).max(MAX_LOADOUT) }).parse(i),
+  )
   .handler(async ({ data, context }) => {
     const s = await loadEconomy(context.supabase, context.userId);
     const clean = Array.from(new Set(data.loadout))
       .filter((id) => findPerk(id) && s.purchases.includes(perkKey(id)))
       .slice(0, MAX_LOADOUT);
     const { data: row } = await context.supabase
-      .from("player_state").select("settings").eq("user_id", context.userId).maybeSingle();
-    const settings = { ...((row?.settings as Record<string, unknown> | null) ?? {}), loadout: clean };
+      .from("player_state")
+      .select("settings")
+      .eq("user_id", context.userId)
+      .maybeSingle();
+    const settings = {
+      ...((row?.settings as Record<string, unknown> | null) ?? {}),
+      loadout: clean,
+    };
     const { error } = await context.supabase
-      .from("player_state").update({ settings: settings as never }).eq("user_id", context.userId);
+      .from("player_state")
+      .update({ settings: settings as never })
+      .eq("user_id", context.userId);
     if (error) throw error;
     return { ok: true as const, loadout: clean };
   });
@@ -285,5 +383,10 @@ export const economyChestQuota = createServerFn({ method: "GET" })
       .gte("created_at", since);
     if (error) throw error;
     const used = count ?? 0;
-    return { used, limit: DAILY_CHEST_LIMIT, left: Math.max(0, DAILY_CHEST_LIMIT - used), resetsInMs: msUntilChestReset() };
+    return {
+      used,
+      limit: DAILY_CHEST_LIMIT,
+      left: Math.max(0, DAILY_CHEST_LIMIT - used),
+      resetsInMs: msUntilChestReset(),
+    };
   });

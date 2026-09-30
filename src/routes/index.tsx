@@ -13,7 +13,8 @@ export const Route = createFileRoute("/")({
       { property: "og:title", content: "NEON RUSH — Arcade infini hypnotique" },
       {
         property: "og:description",
-        content: "Un jeu d'arcade néon addictif : esquive, collecte, enchaîne des combos et bats ton meilleur score dans un tourbillon de particules.",
+        content:
+          "Un jeu d'arcade néon addictif : esquive, collecte, enchaîne des combos et bats ton meilleur score dans un tourbillon de particules.",
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
