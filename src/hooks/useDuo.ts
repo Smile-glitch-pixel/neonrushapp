@@ -14,6 +14,17 @@ import {
   duoEndRun,
   duoCoopResult,
   duoLeave,
+  duoGuestCreateRoom,
+  duoGuestJoinRoom,
+  duoGuestRoomState,
+  duoGuestStart,
+  duoGuestBeginRun,
+  duoGuestPushScore,
+  duoGuestGoDown,
+  duoGuestRevive,
+  duoGuestEndRun,
+  duoGuestCoopResult,
+  duoGuestLeave,
   type DuoRoomState,
   type DuoCoopSummary,
 } from "@/lib/duo.functions";
@@ -22,10 +33,11 @@ export type DuoCoopResult = DuoCoopSummary;
 
 export function useDuo(opts: {
   userId: string | null;
+  deviceId: string | null;
   displayName: string | null;
   equippedSkin: string;
 }) {
-  const { userId, displayName, equippedSkin } = opts;
+  const { userId, deviceId, displayName, equippedSkin } = opts;
   const createFn = useServerFn(duoCreateRoom);
   const joinFn = useServerFn(duoJoinRoom);
   const stateFn = useServerFn(duoRoomState);
@@ -38,6 +50,17 @@ export function useDuo(opts: {
   const endFn = useServerFn(duoEndRun);
   const resultFn = useServerFn(duoCoopResult);
   const leaveFn = useServerFn(duoLeave);
+  const guestCreateFn = useServerFn(duoGuestCreateRoom);
+  const guestJoinFn = useServerFn(duoGuestJoinRoom);
+  const guestStateFn = useServerFn(duoGuestRoomState);
+  const guestStartFn = useServerFn(duoGuestStart);
+  const guestBeginFn = useServerFn(duoGuestBeginRun);
+  const guestPushFn = useServerFn(duoGuestPushScore);
+  const guestDownFn = useServerFn(duoGuestGoDown);
+  const guestReviveFn = useServerFn(duoGuestRevive);
+  const guestEndFn = useServerFn(duoGuestEndRun);
+  const guestResultFn = useServerFn(duoGuestCoopResult);
+  const guestLeaveFn = useServerFn(duoGuestLeave);
 
   const [room, setRoom] = useState<DuoRoomState | null>(null);
   const [busy, setBusy] = useState(false);
@@ -50,42 +73,54 @@ export function useDuo(opts: {
     const id = roomIdRef.current;
     if (!id) return;
     try {
-      const r = (await stateFn({ data: { room_id: id } })) as DuoRoomState | null;
+      const r = (
+        userId
+          ? await stateFn({ data: { room_id: id } })
+          : deviceId
+            ? await guestStateFn({ data: { room_id: id, device_id: deviceId } })
+            : null
+      ) as DuoRoomState | null;
       setRoom(r ?? null);
     } catch {
       setRoom(null);
     }
-  }, [stateFn]);
+  }, [deviceId, guestStateFn, stateFn, userId]);
 
   // Realtime + polling fallback (keeps both allies in sync without touching the game loop)
   useEffect(() => {
     if (!room?.id) return;
     const id = room.id;
-    const ch = supabase
-      .channel(`duo-${id}`)
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "room_players", filter: `room_id=eq.${id}` },
-        () => refresh(),
-      )
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "rooms", filter: `id=eq.${id}` },
-        () => refresh(),
-      )
-      .subscribe();
+    const ch = userId
+      ? supabase
+          .channel(`duo-${id}`)
+          .on(
+            "postgres_changes",
+            { event: "*", schema: "public", table: "room_players", filter: `room_id=eq.${id}` },
+            () => refresh(),
+          )
+          .on(
+            "postgres_changes",
+            { event: "*", schema: "public", table: "rooms", filter: `id=eq.${id}` },
+            () => refresh(),
+          )
+          .subscribe()
+      : null;
     const poll = window.setInterval(refresh, 2000);
     return () => {
-      supabase.removeChannel(ch);
+      if (ch) supabase.removeChannel(ch);
       window.clearInterval(poll);
     };
-  }, [room?.id, refresh]);
+  }, [room?.id, refresh, userId]);
 
   // Presence heartbeat — a micro network drop must never end a coop run
   useEffect(() => {
     if (!room?.id) return;
     const id = room.id;
     const beat = () => {
+      if (!userId) {
+        refresh();
+        return;
+      }
       beatFn({ data: { room_id: id } }).catch(() => {
         /* transient */
       });
@@ -103,7 +138,7 @@ export function useDuo(opts: {
       window.clearInterval(t);
       document.removeEventListener("visibilitychange", onVisible);
     };
-  }, [room?.id, beatFn, refresh]);
+  }, [room?.id, beatFn, refresh, userId]);
 
   const run = useCallback(async <T>(fn: () => Promise<T>) => {
     setBusy(true);
@@ -119,58 +154,76 @@ export function useDuo(opts: {
   }, []);
 
   const create = useCallback(async () => {
-    if (!userId) {
+    if (!userId && !deviceId) {
       setError("AUTH_REQUIRED");
       return;
     }
     const r = await run(() =>
-      createFn({ data: { display_name: displayName, equipped_skin: equippedSkin } }),
+      userId
+        ? createFn({ data: { display_name: displayName, equipped_skin: equippedSkin } })
+        : guestCreateFn({
+            data: { device_id: deviceId!, equipped_skin: equippedSkin },
+          }),
     );
     if (r) {
       setResult(null);
       setRoom(r as DuoRoomState);
     }
-  }, [createFn, displayName, equippedSkin, run, userId]);
+  }, [createFn, deviceId, displayName, equippedSkin, guestCreateFn, run, userId]);
 
   const join = useCallback(
     async (code: string) => {
-      if (!userId) {
+      if (!userId && !deviceId) {
         setError("AUTH_REQUIRED");
         return;
       }
       const r = await run(() =>
-        joinFn({ data: { code, display_name: displayName, equipped_skin: equippedSkin } }),
+        userId
+          ? joinFn({ data: { code, display_name: displayName, equipped_skin: equippedSkin } })
+          : guestJoinFn({ data: { code, device_id: deviceId!, equipped_skin: equippedSkin } }),
       );
       if (r) {
         setResult(null);
         setRoom(r as DuoRoomState);
       }
     },
-    [joinFn, displayName, equippedSkin, run, userId],
+    [deviceId, displayName, equippedSkin, guestJoinFn, joinFn, run, userId],
   );
 
   const startMatch = useCallback(async () => {
-    const r = await run(() => startFn({ data: { room_id: roomIdRef.current! } }));
+    const r = await run(() =>
+      userId
+        ? startFn({ data: { room_id: roomIdRef.current! } })
+        : guestStartFn({ data: { room_id: roomIdRef.current!, device_id: deviceId! } }),
+    );
     if (r) setRoom(r as DuoRoomState);
-  }, [run, startFn]);
+  }, [deviceId, guestStartFn, run, startFn, userId]);
 
   const beginRun = useCallback(() => {
     const id = roomIdRef.current;
     if (!id) return;
-    beginFn({ data: { room_id: id } }).catch(() => {
+    (userId
+      ? beginFn({ data: { room_id: id } })
+      : guestBeginFn({ data: { room_id: id, device_id: deviceId! } })
+    ).catch(() => {
       /* transient */
     });
-  }, [beginFn]);
+  }, [beginFn, deviceId, guestBeginFn, userId]);
 
   const pushScore = useCallback(
     (score: number) => {
       const id = roomIdRef.current;
       if (!id) return;
-      pushFn({ data: { room_id: id, score: Math.max(0, Math.floor(score)) } }).catch(() => {
+      (userId
+        ? pushFn({ data: { room_id: id, score: Math.max(0, Math.floor(score)) } })
+        : guestPushFn({
+            data: { room_id: id, device_id: deviceId!, score: Math.max(0, Math.floor(score)) },
+          })
+      ).catch(() => {
         /* transient */
       });
     },
-    [pushFn],
+    [deviceId, guestPushFn, pushFn, userId],
   );
 
   const goDown = useCallback(
@@ -178,28 +231,33 @@ export function useDuo(opts: {
       const id = roomIdRef.current;
       if (!id) return;
       try {
-        setRoom((await downFn({ data: { room_id: id, down_ms: downMs } })) as DuoRoomState);
+        setRoom(
+          (userId
+            ? await downFn({ data: { room_id: id, down_ms: downMs } })
+            : await guestDownFn({
+                data: { room_id: id, device_id: deviceId!, down_ms: downMs },
+              })) as DuoRoomState,
+        );
       } catch {
         /* transient */
       }
     },
-    [downFn],
+    [deviceId, downFn, guestDownFn, userId],
   );
 
-  const revivePartner = useCallback(
-    async (targetId: string) => {
-      const id = roomIdRef.current;
-      if (!id) return false;
-      try {
-        const r = await reviveFn({ data: { room_id: id, target_id: targetId } });
-        await refresh();
-        return !!r?.revived;
-      } catch {
-        return false;
-      }
-    },
-    [reviveFn, refresh],
-  );
+  const revivePartner = useCallback(async () => {
+    const id = roomIdRef.current;
+    if (!id) return false;
+    try {
+      const r = userId
+        ? await reviveFn({ data: { room_id: id } })
+        : await guestReviveFn({ data: { room_id: id, device_id: deviceId! } });
+      await refresh();
+      return !!r?.revived;
+    } catch {
+      return false;
+    }
+  }, [deviceId, guestReviveFn, refresh, reviveFn, userId]);
 
   /** Fin de vie du joueur : le serveur clôture la manche seulement quand l'équipe entière est éliminée. */
   const endRun = useCallback(
@@ -208,13 +266,23 @@ export function useDuo(opts: {
       if (!id) return;
       const safe = Math.max(0, Math.floor(score));
       try {
-        setResult((await endFn({ data: { room_id: id, score: safe } })) as DuoCoopResult);
+        setResult(
+          (userId
+            ? await endFn({ data: { room_id: id, score: safe } })
+            : await guestEndFn({
+                data: { room_id: id, device_id: deviceId!, score: safe },
+              })) as DuoCoopResult,
+        );
       } catch {
         /* retry below */
       }
       for (let i = 0; i < 30; i++) {
         try {
-          const r = (await resultFn({ data: { room_id: id } })) as DuoCoopResult;
+          const r = (
+            userId
+              ? await resultFn({ data: { room_id: id } })
+              : await guestResultFn({ data: { room_id: id, device_id: deviceId! } })
+          ) as DuoCoopResult;
           setResult(r);
           if (r.settled) {
             await refresh();
@@ -226,7 +294,7 @@ export function useDuo(opts: {
         await new Promise((res) => setTimeout(res, 2000));
       }
     },
-    [endFn, resultFn, refresh],
+    [deviceId, endFn, guestEndFn, guestResultFn, refresh, resultFn, userId],
   );
 
   const leave = useCallback(async () => {
@@ -234,15 +302,21 @@ export function useDuo(opts: {
     setRoom(null);
     setResult(null);
     setError(null);
-    if (id)
-      await leaveFn({ data: { room_id: id } }).catch(() => {
+    if (id && (userId || deviceId))
+      await (
+        userId
+          ? leaveFn({ data: { room_id: id } })
+          : guestLeaveFn({ data: { room_id: id, device_id: deviceId! } })
+      ).catch(() => {
         /* noop */
       });
-  }, [leaveFn]);
+  }, [deviceId, guestLeaveFn, leaveFn, userId]);
 
-  const me = room?.players.find((p) => p.user_id === userId) ?? null;
-  const partner = room?.players.find((p) => p.user_id !== userId) ?? null;
-  const isHost = !!room && room.host_id === userId;
+  const me =
+    room?.players.find((p) => (userId ? p.user_id === userId : p.device_id === deviceId)) ?? null;
+  const partner =
+    room?.players.find((p) => (userId ? p.user_id !== userId : p.device_id !== deviceId)) ?? null;
+  const isHost = !!room && (userId ? room.host_id === userId : room.host_device_id === deviceId);
   const teamScore = room ? room.players.reduce((sum, p) => sum + (p.score || 0), 0) : 0;
   const partnerDown = partner?.state === "down";
   const iAmDown = me?.state === "down";

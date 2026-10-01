@@ -2,7 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 
 /** Client public serveur (invités non connectés). */
-const publicClient = async () => {
+export const publicClient = async () => {
   const { createClient } = await import("@supabase/supabase-js");
   const key = process.env["SUPABASE_PUBLISHABLE_KEY"]!;
   return createClient(process.env["SUPABASE_URL"]!, key, {
@@ -47,7 +47,7 @@ export const guestSubmitScore = createServerFn({ method: "POST" })
     z
       .object({
         deviceId: DeviceSchema,
-        mode: z.enum(["classic", "hardcore", "blitz"]),
+        mode: z.enum(["classic", "hardcore", "zen", "blitz"]),
         score: z.number().int().min(0).max(5_000_000),
         skin: z.string().max(24).nullable().optional(),
       })
@@ -79,4 +79,55 @@ export const guestBests = createServerFn({ method: "POST" })
     for (const r of rows ?? [])
       out[r.mode as string] = Math.max(out[r.mode as string] ?? 0, (r.score as number) ?? 0);
     return out;
+  });
+
+/** Classement personnel de cet appareil invité, mêlé aux comptes et aux autres invités. */
+export const guestMyRank = createServerFn({ method: "POST" })
+  .inputValidator((i: unknown) =>
+    z
+      .object({ deviceId: DeviceSchema, mode: z.enum(["classic", "hardcore", "zen", "blitz"]) })
+      .parse(i),
+  )
+  .handler(async ({ data }) => {
+    const sb = await publicClient();
+    const [mine, accountTotal, guestTotal] = await Promise.all([
+      sb
+        .from("guest_scores")
+        .select("score")
+        .eq("device_id", data.deviceId)
+        .eq("mode", data.mode)
+        .maybeSingle(),
+      sb
+        .from("leaderboard_scores")
+        .select("*", { count: "exact", head: true })
+        .eq("mode", data.mode),
+      sb.from("guest_scores").select("*", { count: "exact", head: true }).eq("mode", data.mode),
+    ]);
+    if (mine.error) throw mine.error;
+    if (accountTotal.error) throw accountTotal.error;
+    if (guestTotal.error) throw guestTotal.error;
+
+    const total = (accountTotal.count ?? 0) + (guestTotal.count ?? 0);
+    if (!mine.data) return { score: 0, rank: null as number | null, total };
+
+    const [betterAccounts, betterGuests] = await Promise.all([
+      sb
+        .from("leaderboard_scores")
+        .select("*", { count: "exact", head: true })
+        .eq("mode", data.mode)
+        .gt("score", mine.data.score),
+      sb
+        .from("guest_scores")
+        .select("*", { count: "exact", head: true })
+        .eq("mode", data.mode)
+        .gt("score", mine.data.score),
+    ]);
+    if (betterAccounts.error) throw betterAccounts.error;
+    if (betterGuests.error) throw betterGuests.error;
+
+    return {
+      score: mine.data.score,
+      rank: (betterAccounts.count ?? 0) + (betterGuests.count ?? 0) + 1,
+      total,
+    };
   });

@@ -25,6 +25,10 @@ export type RemoteState = {
     loadout?: string[];
     chestDay?: string;
     chestUsed?: number;
+    dailyLoginDay?: string;
+    dailyLoginStreak?: number;
+    halloweenPumpkins?: number;
+    halloweenClaims?: string[];
   };
 };
 
@@ -109,9 +113,21 @@ export const mergeProg = (
             ? (local.chestUsed ?? 0)
             : (remote.settings.chestUsed ?? 0)
           : (local.chestUsed ?? 0),
+    dailyLoginDay:
+      (remote.settings?.dailyLoginDay ?? "") > (local.dailyLoginDay ?? "")
+        ? remote.settings?.dailyLoginDay
+        : local.dailyLoginDay,
+    dailyLoginStreak:
+      (remote.settings?.dailyLoginDay ?? "") > (local.dailyLoginDay ?? "")
+        ? (remote.settings?.dailyLoginStreak ?? 0)
+        : local.dailyLoginStreak,
     displayName: remote.settings?.displayName || local.displayName,
     duoBest: Math.max(local.duoBest ?? 0, remote.settings?.duoBest ?? 0),
     duoRevives: Math.max(local.duoRevives ?? 0, remote.settings?.duoRevives ?? 0),
+    halloweenPumpkins: Math.max(local.halloweenPumpkins, remote.settings?.halloweenPumpkins ?? 0),
+    halloweenClaims: Array.from(
+      new Set([...(local.halloweenClaims ?? []), ...(remote.settings?.halloweenClaims ?? [])]),
+    ),
   };
 };
 
@@ -138,5 +154,9 @@ export const progToRemote = (p: Progression): RemoteState => ({
     loadout: p.loadout ?? [],
     chestDay: p.chestDay,
     chestUsed: p.chestUsed ?? 0,
+    dailyLoginDay: p.dailyLoginDay,
+    dailyLoginStreak: p.dailyLoginStreak,
+    halloweenPumpkins: p.halloweenPumpkins,
+    halloweenClaims: p.halloweenClaims,
   },
 });

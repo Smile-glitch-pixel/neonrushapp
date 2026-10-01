@@ -1,4 +1,3 @@
-import { Link } from "@tanstack/react-router";
 import type { useDuo } from "@/hooks/useDuo";
 import type { DuoPlayer } from "@/lib/duo.functions";
 
@@ -61,7 +60,6 @@ function Slot({
 export default function DuoLobby({
   duo,
   tr,
-  signedIn,
   code,
   setCode,
   onCopy,
@@ -70,7 +68,6 @@ export default function DuoLobby({
 }: {
   duo: Duo;
   tr: (k: string) => string;
-  signedIn: boolean;
   code: string;
   setCode: (v: string) => void;
   onCopy: (code: string) => void;
@@ -78,21 +75,6 @@ export default function DuoLobby({
   teamRecord: number;
 }) {
   const { room, me, partner, isHost, busy, error, result } = duo;
-
-  if (!signedIn) {
-    return (
-      <div className="space-y-4 text-center">
-        <p className="text-sm text-muted-foreground">{tr("duoDesc")}</p>
-        <p className="text-xs uppercase tracking-[0.2em] text-glow-magenta">{tr("duoAuth")}</p>
-        <Link
-          to="/auth"
-          className="block rounded-xl border border-[color:var(--neon-cyan)] bg-[color:var(--neon-cyan)]/10 px-6 py-3 font-display text-sm font-black uppercase tracking-[0.3em] text-glow-cyan"
-        >
-          ☁ {tr("signIn")}
-        </Link>
-      </div>
-    );
-  }
 
   /* ---------- Résultat coopératif : aucun vainqueur, aucun perdant ---------- */
   if (result) {

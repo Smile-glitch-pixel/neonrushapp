@@ -53,7 +53,9 @@ export const rollChest = (kind: ChestKind, ownedIds: SkinId[]): ChestDrop => {
     }
     roll -= w[r];
   }
-  const pool = SKINS.filter((s) => s.rarity === picked && !s.passOnly && !ownedIds.includes(s.id));
+  const pool = SKINS.filter(
+    (s) => s.rarity === picked && !s.passOnly && !s.eventOnly && !ownedIds.includes(s.id),
+  );
   if (pool.length > 0) {
     const s = pool[Math.floor(Math.random() * pool.length)]!;
     return { type: "skin", skin: s.id, rarity: picked };

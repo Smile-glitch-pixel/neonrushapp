@@ -14,8 +14,10 @@ export type Database = {
           duration_ms: number;
           id: string;
           outcome: string;
-          player_a_id: string;
+          player_a_id: string | null;
+          player_a_name: string | null;
           player_b_id: string | null;
+          player_b_name: string | null;
           revives: number;
           room_id: string | null;
           team_score: number;
@@ -25,8 +27,10 @@ export type Database = {
           duration_ms?: number;
           id?: string;
           outcome?: string;
-          player_a_id: string;
+          player_a_id?: string | null;
+          player_a_name?: string | null;
           player_b_id?: string | null;
+          player_b_name?: string | null;
           revives?: number;
           room_id?: string | null;
           team_score?: number;
@@ -36,8 +40,10 @@ export type Database = {
           duration_ms?: number;
           id?: string;
           outcome?: string;
-          player_a_id?: string;
+          player_a_id?: string | null;
+          player_a_name?: string | null;
           player_b_id?: string | null;
+          player_b_name?: string | null;
           revives?: number;
           room_id?: string | null;
           team_score?: number;
@@ -197,7 +203,7 @@ export type Database = {
           settings: Json;
           stats: Json;
           updated_at: string;
-          user_id: string;
+          user_id: string | null;
           xp: number;
         };
         Insert: {
@@ -216,7 +222,7 @@ export type Database = {
           settings?: Json;
           stats?: Json;
           updated_at?: string;
-          user_id: string;
+          user_id?: string | null;
           xp?: number;
         };
         Update: {
@@ -235,7 +241,7 @@ export type Database = {
           settings?: Json;
           stats?: Json;
           updated_at?: string;
-          user_id?: string;
+          user_id?: string | null;
           xp?: number;
         };
         Relationships: [];
@@ -266,6 +272,7 @@ export type Database = {
       };
       room_players: {
         Row: {
+          device_id: string | null;
           display_name: string | null;
           down_until: string | null;
           equipped_skin: string | null;
@@ -279,9 +286,10 @@ export type Database = {
           score: number;
           state: string;
           updated_at: string;
-          user_id: string;
+          user_id: string | null;
         };
         Insert: {
+          device_id?: string | null;
           display_name?: string | null;
           down_until?: string | null;
           equipped_skin?: string | null;
@@ -295,9 +303,10 @@ export type Database = {
           score?: number;
           state?: string;
           updated_at?: string;
-          user_id: string;
+          user_id?: string | null;
         };
         Update: {
+          device_id?: string | null;
           display_name?: string | null;
           down_until?: string | null;
           equipped_skin?: string | null;
@@ -311,7 +320,7 @@ export type Database = {
           score?: number;
           state?: string;
           updated_at?: string;
-          user_id?: string;
+          user_id?: string | null;
         };
         Relationships: [
           {
@@ -329,7 +338,8 @@ export type Database = {
           created_at: string;
           duration_s: number;
           ends_at: string | null;
-          host_id: string;
+          host_device_id: string | null;
+          host_id: string | null;
           id: string;
           revives: number;
           started_at: string | null;
@@ -343,7 +353,8 @@ export type Database = {
           created_at?: string;
           duration_s?: number;
           ends_at?: string | null;
-          host_id: string;
+          host_device_id?: string | null;
+          host_id?: string | null;
           id?: string;
           revives?: number;
           started_at?: string | null;
@@ -357,7 +368,8 @@ export type Database = {
           created_at?: string;
           duration_s?: number;
           ends_at?: string | null;
-          host_id?: string;
+          host_device_id?: string | null;
+          host_id?: string | null;
           id?: string;
           revives?: number;
           started_at?: string | null;
@@ -437,7 +449,42 @@ export type Database = {
         Returns: string;
       };
       duo_revive: { Args: { _room: string; _target: string }; Returns: boolean };
+      duo_revive_any: {
+        Args: { _room: string; _target_device?: string | null; _target_user?: string | null };
+        Returns: boolean;
+      };
       duo_tick: { Args: { _room: string }; Returns: undefined };
+      duo_guest_begin_run: { Args: { _device: string; _room: string }; Returns: undefined };
+      duo_guest_create_room: { Args: { _device: string; _skin: string }; Returns: string };
+      duo_guest_end_run: {
+        Args: { _device: string; _room: string; _score: number };
+        Returns: undefined;
+      };
+      duo_guest_go_down: {
+        Args: { _device: string; _down_ms?: number; _room: string };
+        Returns: undefined;
+      };
+      duo_guest_join_room: {
+        Args: { _code: string; _device: string; _skin: string };
+        Returns: string;
+      };
+      duo_guest_leave: { Args: { _device: string; _room: string }; Returns: undefined };
+      duo_guest_push_score: {
+        Args: { _device: string; _room: string; _score: number };
+        Returns: undefined;
+      };
+      duo_guest_revive: {
+        Args: {
+          _device: string;
+          _room: string;
+          _target_device?: string | null;
+          _target_user?: string | null;
+        };
+        Returns: boolean;
+      };
+      duo_guest_room_state: { Args: { _device: string; _room: string }; Returns: Json };
+      duo_guest_start: { Args: { _device: string; _room: string }; Returns: undefined };
+      duo_guest_tick: { Args: { _device: string; _room: string }; Returns: undefined };
       guest_claim_name: {
         Args: { _device: string; _name: string };
         Returns: string;

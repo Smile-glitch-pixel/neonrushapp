@@ -39,7 +39,9 @@ export type SkinId =
   | "inferno"
   | "tempest"
   | "abyss"
-  | "genesis";
+  | "genesis"
+  | "jackolantern"
+  | "wraith";
 
 export type Rarity = "common" | "rare" | "epic" | "legendary" | "mythic" | "exclusive";
 export type GameMode = "classic" | "hardcore" | "zen" | "blitz";
@@ -52,7 +54,80 @@ export type Skin = {
   rarity: Rarity;
   passOnly?: boolean;
   chestOnly?: boolean; // legendary/mythic — never sold in shop
+  eventOnly?: boolean;
 };
+
+export type SkinPowerId = "magnet" | "combo" | "lucky" | "guardian" | "score";
+
+const SKIN_POWER_BY_ID: Partial<Record<SkinId, SkinPowerId>> = {
+  cyan: "magnet",
+  azure: "magnet",
+  plasma: "magnet",
+  ice: "magnet",
+  cobalt: "magnet",
+  jade: "magnet",
+  sky: "magnet",
+  vortex: "magnet",
+  tempest: "magnet",
+  magenta: "score",
+  coral: "score",
+  ember: "score",
+  ruby: "score",
+  inferno: "score",
+  phoenix: "score",
+  rose: "score",
+  lime: "combo",
+  mint: "combo",
+  aurora: "combo",
+  rainbow: "combo",
+  chroma: "combo",
+  genesis: "combo",
+  jackolantern: "guardian",
+  wraith: "guardian",
+  gold: "lucky",
+  bubble: "lucky",
+  solar: "lucky",
+  prism: "lucky",
+  topaz: "lucky",
+  cosmic: "lucky",
+  obsidian: "guardian",
+  ghost: "guardian",
+  void: "guardian",
+  singularity: "guardian",
+  eclipse: "guardian",
+  abyss: "guardian",
+  dusk: "score",
+  olive: "score",
+  sand: "score",
+  nebula: "score",
+  arcane: "score",
+  spectre: "score",
+  quantum: "score",
+};
+
+export const skinPowerFor = (id: SkinId): SkinPowerId => SKIN_POWER_BY_ID[id] ?? "score";
+
+export const SKIN_POWER_BALANCE: Record<
+  Rarity,
+  { durationMs: number; cooldownMs: number; strength: number }
+> = {
+  common: { durationMs: 3200, cooldownMs: 24000, strength: 0.75 },
+  rare: { durationMs: 4000, cooldownMs: 22000, strength: 0.9 },
+  epic: { durationMs: 5000, cooldownMs: 20000, strength: 1.1 },
+  legendary: { durationMs: 6000, cooldownMs: 18000, strength: 1.35 },
+  mythic: { durationMs: 7000, cooldownMs: 16000, strength: 1.6 },
+  exclusive: { durationMs: 6000, cooldownMs: 18000, strength: 1.35 },
+};
+
+export const DAILY_LOGIN_REWARDS = [
+  { coins: 100, xp: 50 },
+  { coins: 150, xp: 75 },
+  { coins: 200, xp: 100 },
+  { coins: 250, xp: 125 },
+  { coins: 300, xp: 150 },
+  { coins: 400, xp: 200 },
+  { coins: 700, xp: 350 },
+] as const;
 
 export const SKINS: Skin[] = [
   // ---------- Common (5) — simple color swaps ----------
@@ -367,6 +442,22 @@ export const SKINS: Skin[] = [
     rarity: "mythic",
     chestOnly: true,
   },
+  {
+    id: "jackolantern",
+    name: "Jack O'Lantern",
+    price: 0,
+    colors: ["#fff2b0", "#ff8c1a", "#572000"],
+    rarity: "legendary",
+    eventOnly: true,
+  },
+  {
+    id: "wraith",
+    name: "Wraith",
+    price: 0,
+    colors: ["#f3e8ff", "#a855f7", "#25104a"],
+    rarity: "mythic",
+    eventOnly: true,
+  },
 ];
 
 /* ---------------- Rarity metadata & FX ---------------- */
@@ -435,7 +526,9 @@ export const rollChestReward = (ownedIds: SkinId[]): ChestReward => {
     }
     roll -= CHEST_WEIGHTS[r];
   }
-  const pool = SKINS.filter((s) => s.rarity === picked && !s.passOnly && !ownedIds.includes(s.id));
+  const pool = SKINS.filter(
+    (s) => s.rarity === picked && !s.passOnly && !s.eventOnly && !ownedIds.includes(s.id),
+  );
   if (pool.length > 0) {
     const s = pool[Math.floor(Math.random() * pool.length)];
     return { type: "skin", skin: s.id, rarity: picked };
@@ -450,6 +543,14 @@ export const drawChestSkin = (ownedIds: SkinId[]): { skin: SkinId; rarity: Rarit
 };
 
 export const CHEST_COST = 500;
+
+export const HALLOWEEN_EVENT_START = Date.UTC(2026, 9, 1);
+export const HALLOWEEN_EVENT_END = Date.UTC(2026, 10, 2);
+export const HALLOWEEN_REWARDS = [
+  { id: "pumpkin-coins", pumpkins: 15, kind: "coins", amount: 300 },
+  { id: "jackolantern-skin", pumpkins: 40, kind: "skin", skin: "jackolantern" },
+  { id: "wraith-skin", pumpkins: 90, kind: "skin", skin: "wraith" },
+] as const;
 
 export const REWARD_MULT: Record<GameMode, number> = {
   zen: 0.4,
@@ -623,28 +724,23 @@ export const refreshMissionsIfNeeded = (m: MissionsData | undefined): MissionsDa
   const ds = dailySeed(),
     ws = weeklySeed();
   if (!m) return generateMissions();
-  const daily =
-    m.daily?.seed === ds
-      ? m.daily
+  const normalizeBucket = (
+    bucket: MissionsBucket | undefined,
+    seed: string,
+    templates: MissionTemplate[],
+  ): MissionsBucket =>
+    bucket?.seed === seed &&
+    bucket.list.every((mission) => templates.some((template) => template.id === mission.id))
+      ? bucket
       : {
-          seed: ds,
-          list: pickN(DAILY_TEMPLATES, 3, ds).map((t) => ({
-            id: t.id,
-            progress: 0,
-            claimed: false,
-          })),
+          seed,
+          list: pickN(templates, 3, seed).map((template) => {
+            const previous = bucket?.list.find((mission) => mission.id === template.id);
+            return previous ?? { id: template.id, progress: 0, claimed: false };
+          }),
         };
-  const weekly =
-    m.weekly?.seed === ws
-      ? m.weekly
-      : {
-          seed: ws,
-          list: pickN(WEEKLY_TEMPLATES, 3, ws).map((t) => ({
-            id: t.id,
-            progress: 0,
-            claimed: false,
-          })),
-        };
+  const daily = normalizeBucket(m.daily, ds, DAILY_TEMPLATES);
+  const weekly = normalizeBucket(m.weekly, ws, WEEKLY_TEMPLATES);
   return { daily, weekly };
 };
 
@@ -670,18 +766,24 @@ export type Progression = {
   achievements: Record<string, { claimed?: boolean }>;
   /** Statistiques cumulées de carrière. */
   stats: Record<string, number>;
-  /** Offres et power-ups permanents déjà achetés (`pw:<id>` pour les perks). */
+  /** Anciennes données d'achats conservées pour compatibilité, sans effet en jeu. */
   purchases: string[];
-  /** Power-ups permanents équipés (5 max). */
+  /** Ancien chargement conservé pour compatibilité, sans effet en jeu. */
   loadout: string[];
   /** Jour UTC du compteur de coffres + coffres ouverts ce jour-là. */
   chestDay?: string;
   chestUsed?: number;
+  dailyLoginDay?: string;
+  dailyLoginStreak: number;
   displayName?: string;
   /** Meilleur score d'équipe en Duo Coop (jamais un score individuel). */
   duoBest?: number;
   /** Réanimations de coéquipier effectuées au total. */
   duoRevives?: number;
+  /** Citrouilles récoltées pendant l'événement Halloween. */
+  halloweenPumpkins: number;
+  /** Récompenses Halloween déjà réclamées. */
+  halloweenClaims: string[];
 };
 
 const KEY = "neon-rush-prog-v2";
@@ -703,8 +805,12 @@ export const defaultProg = (): Progression => ({
   loadout: [],
   chestDay: undefined,
   chestUsed: 0,
+  dailyLoginDay: undefined,
+  dailyLoginStreak: 0,
   duoBest: 0,
   duoRevives: 0,
+  halloweenPumpkins: 0,
+  halloweenClaims: [],
 });
 
 /**
@@ -721,6 +827,9 @@ const sanitize = (p: Partial<Progression>): Progression => {
   merged.owned = (merged.owned || []).filter((id) => validIds.has(id));
   if (!merged.owned.includes("cyan")) merged.owned.push("cyan");
   if (!validIds.has(merged.equipped)) merged.equipped = "cyan";
+  merged.dailyLoginStreak = Math.max(0, Math.floor(merged.dailyLoginStreak || 0));
+  merged.halloweenPumpkins = Math.max(0, Math.floor(merged.halloweenPumpkins || 0));
+  merged.halloweenClaims = Array.from(new Set(merged.halloweenClaims || []));
   merged.missions = refreshMissionsIfNeeded(merged.missions);
   return merged;
 };

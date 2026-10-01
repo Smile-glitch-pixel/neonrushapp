@@ -103,22 +103,44 @@ export const fetchMyRank = createServerFn({ method: "GET" })
       .maybeSingle();
     if (error) throw error;
 
-    const { count: total } = await context.supabase
-      .from("leaderboard_scores")
-      .select("*", { count: "exact", head: true })
-      .eq("mode", data.mode);
+    const [accountTotal, guestTotal] = await Promise.all([
+      context.supabase
+        .from("leaderboard_scores")
+        .select("*", { count: "exact", head: true })
+        .eq("mode", data.mode),
+      context.supabase
+        .from("guest_scores")
+        .select("*", { count: "exact", head: true })
+        .eq("mode", data.mode),
+    ]);
+    if (accountTotal.error) throw accountTotal.error;
+    if (guestTotal.error) throw guestTotal.error;
+    const total = (accountTotal.count ?? 0) + (guestTotal.count ?? 0);
 
     if (!mine) {
-      return { score: 0, rank: null as number | null, total: total ?? 0 };
+      return { score: 0, rank: null as number | null, total };
     }
 
-    const { count: better } = await context.supabase
-      .from("leaderboard_scores")
-      .select("*", { count: "exact", head: true })
-      .eq("mode", data.mode)
-      .gt("score", mine.score);
+    const [betterAccounts, betterGuests] = await Promise.all([
+      context.supabase
+        .from("leaderboard_scores")
+        .select("*", { count: "exact", head: true })
+        .eq("mode", data.mode)
+        .gt("score", mine.score),
+      context.supabase
+        .from("guest_scores")
+        .select("*", { count: "exact", head: true })
+        .eq("mode", data.mode)
+        .gt("score", mine.score),
+    ]);
+    if (betterAccounts.error) throw betterAccounts.error;
+    if (betterGuests.error) throw betterGuests.error;
 
-    return { score: mine.score, rank: (better ?? 0) + 1, total: total ?? 0 };
+    return {
+      score: mine.score,
+      rank: (betterAccounts.count ?? 0) + (betterGuests.count ?? 0) + 1,
+      total,
+    };
   });
 
 /** Meilleurs scores du joueur dans TOUS les modes, tels qu'enregistrés au classement. */
