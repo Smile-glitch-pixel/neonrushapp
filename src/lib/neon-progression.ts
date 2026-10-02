@@ -58,6 +58,38 @@ export type Skin = {
 };
 
 export type SkinPowerId = "magnet" | "combo" | "lucky" | "guardian" | "score";
+export type BackgroundStyleId = "default" | "nebula" | "aurora" | "sunset";
+export type OrbStyleId = "cyan" | "gold" | "rose" | "jade";
+export type SpikeStyleId = "neon" | "crystal" | "flame" | "void";
+export type VisualCategory = "background" | "orb" | "spikes";
+
+export type VisualItem = {
+  id: string;
+  nameKey: string;
+  price: number;
+  colors: string[];
+};
+
+export const VISUAL_SHOP_ITEMS: Record<VisualCategory, VisualItem[]> = {
+  background: [
+    { id: "default", nameKey: "visualDefault", price: 0, colors: ["#0a0816", "#3a1b6a"] },
+    { id: "nebula", nameKey: "visualNebula", price: 700, colors: ["#100b26", "#5740a8"] },
+    { id: "aurora", nameKey: "visualAurora", price: 1100, colors: ["#071c23", "#1d9b83"] },
+    { id: "sunset", nameKey: "visualSunset", price: 1500, colors: ["#24101e", "#e56962"] },
+  ],
+  orb: [
+    { id: "cyan", nameKey: "visualCyanOrbs", price: 0, colors: ["#7bf3ff", "#eaffff"] },
+    { id: "gold", nameKey: "visualGoldOrbs", price: 500, colors: ["#ffcc4d", "#fff5bd"] },
+    { id: "rose", nameKey: "visualRoseOrbs", price: 650, colors: ["#ff62bd", "#ffe0f4"] },
+    { id: "jade", nameKey: "visualJadeOrbs", price: 800, colors: ["#51f2a6", "#ddffed"] },
+  ],
+  spikes: [
+    { id: "neon", nameKey: "visualNeonSpikes", price: 0, colors: ["#ff2e6a", "#ffe0ec"] },
+    { id: "crystal", nameKey: "visualCrystalSpikes", price: 600, colors: ["#49d9ff", "#e2fbff"] },
+    { id: "flame", nameKey: "visualFlameSpikes", price: 900, colors: ["#ff6a24", "#ffe8a6"] },
+    { id: "void", nameKey: "visualVoidSpikes", price: 1200, colors: ["#ad62ff", "#f1dfff"] },
+  ],
+};
 
 const SKIN_POWER_BY_ID: Partial<Record<SkinId, SkinPowerId>> = {
   cyan: "magnet",
@@ -758,6 +790,10 @@ export type Progression = {
   claimed: number[];
   owned: SkinId[];
   equipped: SkinId;
+  ownedVisuals: string[];
+  backgroundStyle: BackgroundStyleId;
+  orbStyle: OrbStyleId;
+  spikeStyle: SpikeStyleId;
   bestByMode: Record<GameMode, number>;
   missions: MissionsData;
   /** Coffres possédés (gagnés via Pass / boutique). */
@@ -796,6 +832,10 @@ export const defaultProg = (): Progression => ({
   claimed: [],
   owned: ["cyan"],
   equipped: "cyan",
+  ownedVisuals: ["background:default", "orb:cyan", "spikes:neon"],
+  backgroundStyle: "default",
+  orbStyle: "cyan",
+  spikeStyle: "neon",
   bestByMode: { classic: 0, hardcore: 0, zen: 0, blitz: 0 },
   missions: generateMissions(),
   inventory: {},
@@ -827,6 +867,24 @@ const sanitize = (p: Partial<Progression>): Progression => {
   merged.owned = (merged.owned || []).filter((id) => validIds.has(id));
   if (!merged.owned.includes("cyan")) merged.owned.push("cyan");
   if (!validIds.has(merged.equipped)) merged.equipped = "cyan";
+  const visualIds = new Set(
+    Object.entries(VISUAL_SHOP_ITEMS).flatMap(([category, items]) =>
+      items.map((item) => `${category}:${item.id}`),
+    ),
+  );
+  merged.ownedVisuals = (merged.ownedVisuals || []).filter((id) => visualIds.has(id));
+  for (const id of defaultProg().ownedVisuals) {
+    if (!merged.ownedVisuals.includes(id)) merged.ownedVisuals.push(id);
+  }
+  if (!VISUAL_SHOP_ITEMS.background.some((item) => item.id === merged.backgroundStyle))
+    merged.backgroundStyle = "default";
+  if (!VISUAL_SHOP_ITEMS.orb.some((item) => item.id === merged.orbStyle)) merged.orbStyle = "cyan";
+  if (!VISUAL_SHOP_ITEMS.spikes.some((item) => item.id === merged.spikeStyle))
+    merged.spikeStyle = "neon";
+  if (!merged.ownedVisuals.includes(`background:${merged.backgroundStyle}`))
+    merged.backgroundStyle = "default";
+  if (!merged.ownedVisuals.includes(`orb:${merged.orbStyle}`)) merged.orbStyle = "cyan";
+  if (!merged.ownedVisuals.includes(`spikes:${merged.spikeStyle}`)) merged.spikeStyle = "neon";
   merged.dailyLoginStreak = Math.max(0, Math.floor(merged.dailyLoginStreak || 0));
   merged.halloweenPumpkins = Math.max(0, Math.floor(merged.halloweenPumpkins || 0));
   merged.halloweenClaims = Array.from(new Set(merged.halloweenClaims || []));

@@ -50,6 +50,11 @@ import {
   type MissionStat,
   type Rarity,
   type SkinPowerId,
+  type BackgroundStyleId,
+  type OrbStyleId,
+  type SpikeStyleId,
+  type VisualCategory,
+  VISUAL_SHOP_ITEMS,
 } from "@/lib/neon-progression";
 import { supabase } from "@/integrations/supabase/client";
 import { pullPlayerState, pushPlayerState } from "@/lib/player-sync.functions";
@@ -429,7 +434,7 @@ type Entity = Vec & {
   r: number;
   life: number;
   maxLife: number;
-  kind: "orb" | "hazard" | "power" | "particle" | "pumpkin" | "ghost";
+  kind: "orb" | "bonusOrb" | "hazard" | "power" | "particle" | "pumpkin" | "ghost";
   color: string;
   power?: PowerId;
   angle?: number;
@@ -466,6 +471,13 @@ const vibrate = (pattern: number | number[]) => {
 };
 const rand = (a: number, b: number) => a + Math.random() * (b - a);
 const dist2 = (a: Vec, b: Vec) => (a.x - b.x) ** 2 + (a.y - b.y) ** 2;
+const visualStyle = (category: VisualCategory, id: string) =>
+  VISUAL_SHOP_ITEMS[category].find((item) => item.id === id) ?? VISUAL_SHOP_ITEMS[category][0]!;
+const colorWithAlpha = (hex: string, alpha: number) => {
+  const value = hex.slice(1);
+  const number = Number.parseInt(value, 16);
+  return `rgba(${(number >> 16) & 255}, ${(number >> 8) & 255}, ${number & 255}, ${alpha})`;
+};
 const tracePolygon = (
   ctx: CanvasRenderingContext2D,
   x: number,
@@ -589,19 +601,26 @@ export default function NeonRush() {
   const finishIntro = useCallback(() => {
     setIntroVisible(false);
     if (tutorialPendingRef.current) {
-      tutorialPendingRef.current = false;
       setTutorialVisible(true);
     }
   }, []);
 
   useEffect(() => {
+    if (!user) {
+      tutorialPendingRef.current = false;
+      return;
+    }
     let tutorialSeen = false;
     try {
-      tutorialSeen = localStorage.getItem(TUTORIAL_KEY) === "1";
+      tutorialSeen = localStorage.getItem(`${TUTORIAL_KEY}:${user.id}`) === "1";
     } catch (error) {
-      console.error("Could not read the first-visit tutorial preference.", error);
+      console.error("Could not read the account tutorial preference.", error);
     }
     tutorialPendingRef.current = !tutorialSeen;
+    if (!tutorialSeen && !introVisible) setTutorialVisible(true);
+  }, [user, introVisible]);
+
+  useEffect(() => {
     const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     const timeout = window.setTimeout(finishIntro, reducedMotion ? 1200 : 4600);
     return () => window.clearTimeout(timeout);
@@ -925,6 +944,9 @@ export default function NeonRush() {
     difficulty: 1,
     mode: "classic" as GameMode,
     skinColors: equippedSkin.colors as [string, string, string],
+    backgroundStyle: prog.backgroundStyle,
+    orbStyle: prog.orbStyle,
+    spikeStyle: prog.spikeStyle,
     skinId: equippedSkin.id,
     skinFx: equippedFx,
     skinRarity: equippedSkin.rarity as Rarity,
@@ -936,12 +958,21 @@ export default function NeonRush() {
     runOrbs: 0,
     runPowers: 0,
     runPumpkins: 0,
+    runBonusCoins: 0,
+    nextSurvivalMilestone: 30_000,
     lastPumpkinSpawn: 0,
     halloween: false,
     halloweenBossSpawned: false,
     duo: false,
     lo: emptyLoadout() as Loadout,
   });
+
+  useEffect(() => {
+    const s = stateRef.current;
+    s.backgroundStyle = prog.backgroundStyle;
+    s.orbStyle = prog.orbStyle;
+    s.spikeStyle = prog.spikeStyle;
+  }, [prog.backgroundStyle, prog.orbStyle, prog.spikeStyle]);
 
   const notifyRef = useRef(notify);
   useEffect(() => {
@@ -982,6 +1013,8 @@ export default function NeonRush() {
       s.runOrbs = 0;
       s.runPowers = 0;
       s.runPumpkins = 0;
+      s.runBonusCoins = 0;
+      s.nextSurvivalMilestone = 30_000;
       s.lastPumpkinSpawn = 0;
       s.halloween = !!opts?.halloween;
       s.halloweenBossSpawned = false;
@@ -1001,6 +1034,9 @@ export default function NeonRush() {
       s.duo = !!opts?.duo;
       const sk = SKINS.find((k) => k.id === prog.equipped) || SKINS[0];
       s.skinColors = sk.colors as [string, string, string];
+      s.backgroundStyle = prog.backgroundStyle;
+      s.orbStyle = prog.orbStyle;
+      s.spikeStyle = prog.spikeStyle;
       s.skinId = sk.id;
       s.skinFx = RARITY_FX[sk.rarity];
       s.skinRarity = sk.rarity;
@@ -1036,7 +1072,14 @@ export default function NeonRush() {
         setCountdown(3);
       }
     },
-    [prog.equipped, prog.bestByMode, clearNotifs],
+    [
+      prog.equipped,
+      prog.bestByMode,
+      prog.backgroundStyle,
+      prog.orbStyle,
+      prog.spikeStyle,
+      clearNotifs,
+    ],
   );
 
   // Compte à rebours 3 · 2 · 1 · GO
@@ -1152,7 +1195,11 @@ export default function NeonRush() {
     duoRewardedRef.current = room.id;
     const secs = Math.floor(res.survivedMs / 1000);
     const coins =
-      100 + Math.floor(res.teamScore / 40) + res.revives * 40 + Math.floor(secs / 10) * 5;
+      100 +
+      Math.floor(res.teamScore / 40) +
+      res.revives * 40 +
+      Math.floor(secs / 10) * 5 +
+      stateRef.current.runBonusCoins;
     const xp = 150 + Math.floor(res.teamScore / 25) + res.revives * 60 + Math.floor(secs / 10) * 8;
     setProg((p) => ({
       ...p,
@@ -1350,7 +1397,8 @@ export default function NeonRush() {
   const finishRun = useCallback(
     (finalScore: number, finalMode: GameMode, finalCombo: number) => {
       const mult = REWARD_MULT[finalMode] ?? 1;
-      const earnedCoins = Math.floor((finalScore / 10) * mult);
+      const run = stateRef.current;
+      const earnedCoins = Math.floor((finalScore / 10) * mult) + run.runBonusCoins;
       const earnedXP = Math.floor((finalScore / 6) * mult);
       setProg((p) => {
         const bestByMode = {
@@ -1454,6 +1502,9 @@ export default function NeonRush() {
       const speed = rand(1.2, 2.4) * s.difficulty;
       const hazardChance = s.halloween ? 0.42 : s.mode === "hardcore" ? 0.55 : 0.32;
       const isHazard = Math.random() < hazardChance;
+      const isBonusOrb = !s.duo && !isHazard && Math.random() < 0.055;
+      const orbStyle = visualStyle("orb", s.orbStyle);
+      const spikeStyle = visualStyle("spikes", s.spikeStyle);
       s.entities.push({
         x,
         y,
@@ -1462,8 +1513,14 @@ export default function NeonRush() {
         r: isHazard ? rand(14, 26) : rand(7, 11),
         life: 0,
         maxLife: 0,
-        kind: isHazard ? "hazard" : "orb",
-        color: isHazard ? (s.halloween ? "#b05cff" : "#ff2e6a") : "#7bf3ff",
+        kind: isHazard ? "hazard" : isBonusOrb ? "bonusOrb" : "orb",
+        color: isHazard
+          ? s.halloween
+            ? "#b05cff"
+            : spikeStyle.colors[0]!
+          : isBonusOrb
+            ? "#ffcc4d"
+            : orbStyle.colors[0]!,
         angle: rand(0, Math.PI * 2),
         spin: rand(-0.05, 0.05),
       });
@@ -1628,11 +1685,14 @@ export default function NeonRush() {
         s.fpsAcc = 0;
         s.fpsFrames = 0;
       }
-      ctx.fillStyle = s.halloween ? "rgba(23, 8, 30, 0.38)" : "rgba(10, 8, 22, 0.35)";
+      const backgroundStyle = visualStyle("background", s.backgroundStyle);
+      ctx.fillStyle = s.halloween
+        ? "rgba(23, 8, 30, 0.38)"
+        : colorWithAlpha(backgroundStyle.colors[0]!, 0.38);
       ctx.fillRect(0, 0, s.w, s.h);
       ctx.save();
       ctx.globalAlpha = 0.25;
-      ctx.strokeStyle = s.halloween ? "#6b2c45" : "#3a1b6a";
+      ctx.strokeStyle = s.halloween ? "#6b2c45" : backgroundStyle.colors[1]!;
       ctx.lineWidth = 1;
       const gs = 40;
       const off = (s.t * 0.03) % gs;
@@ -1696,6 +1756,19 @@ export default function NeonRush() {
 
       if (s.running) {
         s.t += dt;
+        while (s.t >= s.nextSurvivalMilestone) {
+          s.nextSurvivalMilestone += 30_000;
+          s.runBonusCoins += 15;
+          s.score += 50;
+          popup(s.w / 2, s.h * 0.32, "+50 · +15 🪙", "#fff17a", 17);
+          wave(s.player.x, s.player.y, "#fff17a", 150, 3, 420);
+          setScore(Math.floor(s.score));
+          notifyRef.current(trRef.current("mechanicSurvivalReward"), {
+            kind: "success",
+            icon: "⏱️",
+            ttl: 1800,
+          });
+        }
         s.skinPowerCooldown = Math.max(0, s.skinPowerCooldown - dt);
         s.skinPowerTimer = Math.max(0, s.skinPowerTimer - dt);
         if (skinPowerRequestRef.current) {
@@ -1844,7 +1917,7 @@ export default function NeonRush() {
               continue;
             }
           } else {
-            if (magnetR && e.kind === "orb") {
+            if (magnetR && (e.kind === "orb" || e.kind === "bonusOrb")) {
               const dx = s.player.x - e.x,
                 dy = s.player.y - e.y;
               const d = Math.hypot(dx, dy) || 1;
@@ -1889,7 +1962,7 @@ export default function NeonRush() {
               popup(e.x, e.y - 20, "+30 🎃", "#ffb347", 16);
               audioRef.current.pickup(s.combo);
               s.entities.splice(i, 1);
-            } else if (e.kind === "orb") {
+            } else if (e.kind === "orb" || e.kind === "bonusOrb") {
               s.combo++;
               s.comboTimer = s.lo.comboKeeper
                 ? 2880
@@ -1914,7 +1987,16 @@ export default function NeonRush() {
                 (s.powers.boost > 0 ? 1.25 : 1) *
                 (s.lo.scoreBoost ? 1.15 : 1) *
                 (lucky ? 2 : 1);
-              const gain = Math.round((10 + s.combo * 2) * mul);
+              const isBonusOrb = e.kind === "bonusOrb";
+              const gain = Math.round((10 + s.combo * 2 + (isBonusOrb ? 100 : 0)) * mul);
+              if (isBonusOrb) {
+                s.runBonusCoins += 25;
+                notifyRef.current(trRef.current("mechanicGoldOrb"), {
+                  kind: "epic",
+                  icon: "🌟",
+                  ttl: 1800,
+                });
+              }
               s.score += gain;
               setScore(Math.floor(s.score));
               setCombo(s.combo);
@@ -1923,13 +2005,19 @@ export default function NeonRush() {
               popup(
                 e.x,
                 e.y,
-                `+${gain}`,
-                s.powers.x2 > 0 ? POWER_MAP.x2.color : s.skinColors[1],
+                isBonusOrb ? `+${gain} · +25 🪙` : `+${gain}`,
+                isBonusOrb ? "#ffcc4d" : s.powers.x2 > 0 ? POWER_MAP.x2.color : s.skinColors[1],
                 s.powers.x2 > 0 ? 16 : 13,
               );
               if (s.combo > 0 && s.combo % 10 === 0) {
+                s.runBonusCoins += 5;
                 wave(s.player.x, s.player.y, POWER_MAP.x2.color, 200, 3, 460);
                 popup(s.player.x, s.player.y - 34, `×${s.combo}`, "#fff17a", 20);
+                notifyRef.current(trRef.current("mechanicComboReward"), {
+                  kind: "success",
+                  icon: "⚡",
+                  ttl: 1600,
+                });
                 vibrate(12);
               }
               // Nouveau record en direct
@@ -2183,19 +2271,26 @@ export default function NeonRush() {
         ctx.save();
         ctx.translate(e.x, e.y);
         ctx.rotate(e.angle || 0);
-        if (e.kind === "orb") {
+        if (e.kind === "orb" || e.kind === "bonusOrb") {
+          const orbColor = e.color;
           const g = ctx.createRadialGradient(0, 0, 0, 0, 0, e.r * 3);
-          g.addColorStop(0, "rgba(160,255,255,1)");
-          g.addColorStop(0.4, "rgba(123,243,255,0.7)");
-          g.addColorStop(1, "rgba(123,243,255,0)");
+          g.addColorStop(0, colorWithAlpha(orbColor, 1));
+          g.addColorStop(0.4, colorWithAlpha(orbColor, 0.7));
+          g.addColorStop(1, colorWithAlpha(orbColor, 0));
           ctx.fillStyle = g;
           ctx.beginPath();
-          ctx.arc(0, 0, e.r * 3, 0, Math.PI * 2);
+          ctx.arc(0, 0, e.r * (e.kind === "bonusOrb" ? 3.6 : 3), 0, Math.PI * 2);
           ctx.fill();
-          ctx.fillStyle = "#eaffff";
+          ctx.fillStyle = visualStyle("orb", s.orbStyle).colors[1]!;
           ctx.beginPath();
           ctx.arc(0, 0, e.r * 0.7, 0, Math.PI * 2);
           ctx.fill();
+          if (e.kind === "bonusOrb") {
+            ctx.strokeStyle = "#fff5bd";
+            ctx.lineWidth = 2;
+            traceStar(ctx, 0, 0, e.r * 1.25, e.r * 0.52, 5, s.t / 260);
+            ctx.stroke();
+          }
         } else if (e.kind === "pumpkin") {
           const glow = 1 + Math.sin(s.t / 130 + e.x) * 0.12;
           ctx.shadowColor = "#ff8c1a";
@@ -2248,26 +2343,43 @@ export default function NeonRush() {
           ctx.arc(0, e.r * 0.25, e.r * 0.13, 0, Math.PI * 2);
           ctx.fill();
         } else if (e.kind === "hazard") {
+          const spikeStyle = visualStyle("spikes", s.spikeStyle);
+          const glowColor = s.halloween ? "#b05cff" : spikeStyle.colors[0]!;
+          const bodyColor = s.halloween
+            ? "#8e44d8"
+            : s.spikeStyle === "void"
+              ? "#25133f"
+              : spikeStyle.colors[0]!;
+          const outlineColor = s.halloween ? "#ead6ff" : spikeStyle.colors[1]!;
           // Compact halo (smaller radius = sharper on high-DPR mobile)
           const g = ctx.createRadialGradient(0, 0, e.r * 0.6, 0, 0, e.r * 1.6);
-          g.addColorStop(0, s.halloween ? "rgba(176,92,255,0.65)" : "rgba(255,60,120,0.55)");
-          g.addColorStop(1, s.halloween ? "rgba(176,92,255,0)" : "rgba(255,46,106,0)");
+          g.addColorStop(0, colorWithAlpha(glowColor, 0.65));
+          g.addColorStop(1, colorWithAlpha(glowColor, 0));
           ctx.fillStyle = g;
           ctx.beginPath();
           ctx.arc(0, 0, e.r * 1.6, 0, Math.PI * 2);
           ctx.fill();
           // Crisp solid body
-          ctx.fillStyle = s.halloween ? "#8e44d8" : "#ff2e6a";
+          ctx.fillStyle = bodyColor;
           ctx.beginPath();
           ctx.arc(0, 0, e.r, 0, Math.PI * 2);
           ctx.fill();
           // Sharp spike ring outline
-          ctx.strokeStyle = s.halloween ? "#ead6ff" : "#ffe0ec";
+          ctx.strokeStyle = outlineColor;
           ctx.lineWidth = 1.5;
           ctx.beginPath();
-          const spikes = 8;
+          const spikes =
+            s.spikeStyle === "crystal"
+              ? 4
+              : s.spikeStyle === "flame"
+                ? 3
+                : s.spikeStyle === "void"
+                  ? 12
+                  : 8;
           for (let k = 0; k < spikes * 2; k++) {
-            const rr = k % 2 === 0 ? e.r * 1.05 : e.r * 0.7;
+            const innerRadius =
+              s.spikeStyle === "crystal" ? 0.48 : s.spikeStyle === "flame" ? 0.58 : 0.7;
+            const rr = k % 2 === 0 ? e.r * 1.2 : e.r * innerRadius;
             const a = (k / (spikes * 2)) * Math.PI * 2;
             const px = Math.cos(a) * rr,
               py = Math.sin(a) * rr;
@@ -2630,6 +2742,38 @@ export default function NeonRush() {
       return;
     }
     setProg((p) => ({ ...p, coins: p.coins - sk.price, owned: [...p.owned, id] }));
+    showToast(tr("owned"));
+  };
+  const equipVisual = (category: VisualCategory, id: string) => {
+    if (!VISUAL_SHOP_ITEMS[category].some((item) => item.id === id)) return;
+    const key = `${category}:${id}`;
+    if (!prog.ownedVisuals.includes(key)) return;
+    setProg((p) => {
+      if (!p.ownedVisuals.includes(key)) return p;
+      if (category === "background") return { ...p, backgroundStyle: id as BackgroundStyleId };
+      if (category === "orb") return { ...p, orbStyle: id as OrbStyleId };
+      return { ...p, spikeStyle: id as SpikeStyleId };
+    });
+  };
+  const buyVisual = (category: VisualCategory, id: string) => {
+    const item = VISUAL_SHOP_ITEMS[category].find((entry) => entry.id === id);
+    if (!item) return;
+    const key = `${category}:${id}`;
+    if (prog.ownedVisuals.includes(key)) {
+      equipVisual(category, id);
+      return;
+    }
+    if (prog.coins < item.price) {
+      showToast(tr("notEnough"));
+      return;
+    }
+    setProg((p) => {
+      if (p.ownedVisuals.includes(key) || p.coins < item.price) return p;
+      const next = { ...p, coins: p.coins - item.price, ownedVisuals: [...p.ownedVisuals, key] };
+      if (category === "background") return { ...next, backgroundStyle: id as BackgroundStyleId };
+      if (category === "orb") return { ...next, orbStyle: id as OrbStyleId };
+      return { ...next, spikeStyle: id as SpikeStyleId };
+    });
     showToast(tr("owned"));
   };
   const equipSkin = (id: SkinId) => {
@@ -3722,6 +3866,64 @@ export default function NeonRush() {
                     {chestLeft <= 0 ? tr("dailyLimit") : `${tr("buy")} · ${CHEST_COST} 🪙`}
                   </button>
                 </div>
+                <div className="mt-5 max-h-[42vh] space-y-4 overflow-y-auto pr-1">
+                  {(Object.keys(VISUAL_SHOP_ITEMS) as VisualCategory[]).map((category) => {
+                    const labelKey =
+                      category === "background"
+                        ? "visualBackgrounds"
+                        : category === "orb"
+                          ? "visualOrbs"
+                          : "visualSpikes";
+                    const equipped =
+                      category === "background"
+                        ? prog.backgroundStyle
+                        : category === "orb"
+                          ? prog.orbStyle
+                          : prog.spikeStyle;
+                    return (
+                      <section key={category}>
+                        <h3 className="mb-2 font-display text-xs font-black uppercase tracking-[0.2em] text-glow-cyan">
+                          {tr(labelKey)}
+                        </h3>
+                        <div className="grid grid-cols-2 gap-2">
+                          {VISUAL_SHOP_ITEMS[category].map((item) => {
+                            const owned = prog.ownedVisuals.includes(`${category}:${item.id}`);
+                            const active = equipped === item.id;
+                            return (
+                              <div
+                                key={item.id}
+                                className="rounded-xl border border-white/10 bg-black/30 p-3"
+                              >
+                                <div
+                                  className="mb-2 h-9 rounded-lg border border-white/20"
+                                  style={{
+                                    background: `linear-gradient(135deg, ${item.colors[0]}, ${item.colors[1]})`,
+                                    boxShadow: `0 0 14px ${item.colors[0]}55`,
+                                  }}
+                                  aria-hidden="true"
+                                />
+                                <div className="text-[10px] font-bold uppercase tracking-wider">
+                                  {tr(item.nameKey)}
+                                </div>
+                                <button
+                                  onClick={() => buyVisual(category, item.id)}
+                                  disabled={active || (!owned && prog.coins < item.price)}
+                                  className="mt-2 w-full rounded-lg bg-black/50 px-2 py-2 text-[9px] font-black uppercase tracking-wider text-glow-yellow disabled:opacity-50"
+                                >
+                                  {active
+                                    ? tr("visualEquipped")
+                                    : owned
+                                      ? tr("visualOwned")
+                                      : `${tr("buy")} · ${item.price} 🪙`}
+                                </button>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </section>
+                    );
+                  })}
+                </div>
               </div>
             )}
 
@@ -4042,9 +4244,9 @@ export default function NeonRush() {
               onClick={() => {
                 if (tutorialPendingRef.current) {
                   try {
-                    localStorage.setItem(TUTORIAL_KEY, "1");
+                    if (user) localStorage.setItem(`${TUTORIAL_KEY}:${user.id}`, "1");
                   } catch (error) {
-                    console.error("Could not save the first-visit tutorial preference.", error);
+                    console.error("Could not save the account tutorial preference.", error);
                   }
                   tutorialPendingRef.current = false;
                 }

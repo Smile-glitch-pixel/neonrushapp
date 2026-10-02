@@ -1,5 +1,11 @@
-import type { Progression, SkinId, GameMode, MissionsData } from "./neon-progression";
-import { defaultProg, refreshMissionsIfNeeded } from "./neon-progression";
+import type {
+  Progression,
+  SkinId,
+  GameMode,
+  MissionsData,
+  VisualCategory,
+} from "./neon-progression";
+import { defaultProg, refreshMissionsIfNeeded, VISUAL_SHOP_ITEMS } from "./neon-progression";
 import { levelFromXp } from "./economy";
 
 export type RemoteState = {
@@ -87,6 +93,23 @@ export const mergeProg = (
     local.inventory as Record<string, number>,
     remote.inventory as Record<string, number>,
   );
+  const validVisualIds = new Set(
+    Object.entries(VISUAL_SHOP_ITEMS).flatMap(([category, items]) =>
+      items.map((item) => `${category}:${item.id}`),
+    ),
+  );
+  const remoteVisuals = Array.isArray(remote.settings?.ownedVisuals)
+    ? remote.settings.ownedVisuals.filter(
+        (id): id is string => typeof id === "string" && validVisualIds.has(id),
+      )
+    : [];
+  const ownedVisuals = Array.from(new Set([...local.ownedVisuals, ...remoteVisuals]));
+  const remoteVisualStyle = (category: VisualCategory, key: string, fallback: string): string => {
+    const value = remote.settings?.[key];
+    return typeof value === "string" && ownedVisuals.includes(`${category}:${value}`)
+      ? value
+      : fallback;
+  };
   return {
     coins: Math.max(local.coins, remote.coins),
     gems: Math.max(local.gems ?? 0, remote.gems ?? 0),
@@ -97,6 +120,18 @@ export const mergeProg = (
     equipped: (owned.includes(remote.equipped as SkinId)
       ? remote.equipped
       : local.equipped) as SkinId,
+    ownedVisuals,
+    backgroundStyle: remoteVisualStyle(
+      "background",
+      "backgroundStyle",
+      local.backgroundStyle,
+    ) as Progression["backgroundStyle"],
+    orbStyle: remoteVisualStyle("orb", "orbStyle", local.orbStyle) as Progression["orbStyle"],
+    spikeStyle: remoteVisualStyle(
+      "spikes",
+      "spikeStyle",
+      local.spikeStyle,
+    ) as Progression["spikeStyle"],
     bestByMode,
     missions,
     inventory: { coinChests: inv.coinChests ?? 0, gemChests: inv.gemChests ?? 0 },
@@ -158,5 +193,9 @@ export const progToRemote = (p: Progression): RemoteState => ({
     dailyLoginStreak: p.dailyLoginStreak,
     halloweenPumpkins: p.halloweenPumpkins,
     halloweenClaims: p.halloweenClaims,
+    ownedVisuals: p.ownedVisuals,
+    backgroundStyle: p.backgroundStyle,
+    orbStyle: p.orbStyle,
+    spikeStyle: p.spikeStyle,
   },
 });
