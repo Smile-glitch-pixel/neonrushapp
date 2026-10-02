@@ -13,6 +13,8 @@ const StateSchema = z.object({
     hardcore: z.number().int().min(0),
     zen: z.number().int().min(0),
     blitz: z.number().int().min(0),
+    surge: z.number().int().min(0).optional(),
+    treasure: z.number().int().min(0).optional(),
   }),
   gems: z.number().int().min(0).optional(),
   level: z.number().int().min(1).optional(),

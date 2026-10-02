@@ -61,6 +61,8 @@ export const mergeProg = (
     hardcore: Math.max(local.bestByMode.hardcore || 0, remote.best_by_mode.hardcore || 0),
     zen: Math.max(local.bestByMode.zen || 0, remote.best_by_mode.zen || 0),
     blitz: Math.max(local.bestByMode.blitz || 0, remote.best_by_mode.blitz || 0),
+    surge: Math.max(local.bestByMode.surge || 0, remote.best_by_mode.surge || 0),
+    treasure: Math.max(local.bestByMode.treasure || 0, remote.best_by_mode.treasure || 0),
   };
   // Merge missions per bucket: same seed -> take max progress, OR claimed flag
   const rMissions = remote.missions ?? remote.settings?.missions;

@@ -47,7 +47,7 @@ export const guestSubmitScore = createServerFn({ method: "POST" })
     z
       .object({
         deviceId: DeviceSchema,
-        mode: z.enum(["classic", "hardcore", "zen", "blitz"]),
+        mode: z.enum(["classic", "hardcore", "zen", "blitz", "surge", "treasure"]),
         score: z.number().int().min(0).max(5_000_000),
         skin: z.string().max(24).nullable().optional(),
       })
@@ -85,7 +85,10 @@ export const guestBests = createServerFn({ method: "POST" })
 export const guestMyRank = createServerFn({ method: "POST" })
   .inputValidator((i: unknown) =>
     z
-      .object({ deviceId: DeviceSchema, mode: z.enum(["classic", "hardcore", "zen", "blitz"]) })
+      .object({
+        deviceId: DeviceSchema,
+        mode: z.enum(["classic", "hardcore", "zen", "blitz", "surge", "treasure"]),
+      })
       .parse(i),
   )
   .handler(async ({ data }) => {

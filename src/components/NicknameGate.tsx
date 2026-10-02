@@ -39,7 +39,7 @@ export default function NicknameGate({ tr, onSave, onSignOut, guest = false }: P
     <div className="absolute inset-0 z-[60] flex items-center justify-center bg-black/85 p-4 backdrop-blur-sm">
       <div className="panel-neon w-full max-w-sm rounded-2xl p-6 animate-scale-in">
         <div className="text-[10px] uppercase tracking-[0.4em] text-muted-foreground">
-          {tr("ranked")}
+          {tr("leaderboard")}
         </div>
         <h2 className="mt-1 font-display text-2xl font-black text-glow-cyan">{tr("nickTitle")}</h2>
         <p className="mt-2 text-xs text-muted-foreground">

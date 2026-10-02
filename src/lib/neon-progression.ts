@@ -44,7 +44,7 @@ export type SkinId =
   | "wraith";
 
 export type Rarity = "common" | "rare" | "epic" | "legendary" | "mythic" | "exclusive";
-export type GameMode = "classic" | "hardcore" | "zen" | "blitz";
+export type GameMode = "classic" | "hardcore" | "zen" | "blitz" | "surge" | "treasure";
 
 export type Skin = {
   id: SkinId;
@@ -585,51 +585,40 @@ export const HALLOWEEN_REWARDS = [
 ] as const;
 
 export const REWARD_MULT: Record<GameMode, number> = {
-  zen: 0.4,
+  zen: 0.75,
   classic: 1,
-  blitz: 1.2,
-  hardcore: 1.7,
+  blitz: 1.1,
+  hardcore: 1.25,
+  surge: 1.2,
+  treasure: 1.15,
 };
 
 export const MODES: { id: GameMode; nameKey: string; descKey: string }[] = [
   { id: "classic", nameKey: "modeClassic", descKey: "modeClassicDesc" },
   { id: "hardcore", nameKey: "modeHardcore", descKey: "modeHardcoreDesc" },
-
+  { id: "surge", nameKey: "modeSurge", descKey: "modeSurgeDesc" },
+  { id: "treasure", nameKey: "modeTreasure", descKey: "modeTreasureDesc" },
   { id: "blitz", nameKey: "modeBlitz", descKey: "modeBlitzDesc" },
 ];
 
 /* ---------------- Battle Pass — 100 tiers ---------------- */
 export const PASS_TIERS = 100;
-export const PASS_XP_PER_TIER = 500;
+export const PASS_XP_PER_TIER = 350;
 
 export type PassReward = { type: "coins" | "xp" | "chest" | "skin"; value: number | SkinId };
 
-// Deterministic 100-tier reward table. Only tier 100 grants the exclusive skin.
+// The 100-tier Neon Odyssey pass keeps tier indexes stable for existing claims.
 export const PASS_REWARDS: PassReward[] = Array.from({ length: PASS_TIERS }, (_, i) => {
   const tier = i + 1;
-  if (tier === PASS_TIERS) return { type: "skin", value: "eclipse" };
-  if (tier % 25 === 0) return { type: "chest", value: 3 };
+  if (tier === 100) return { type: "skin", value: "eclipse" };
+  if (tier === 75) return { type: "skin", value: "singularity" };
+  if (tier === 50) return { type: "skin", value: "phoenix" };
+  if (tier === 25) return { type: "skin", value: "cosmic" };
+  if (tier % 20 === 0) return { type: "chest", value: 2 };
   if (tier % 10 === 0) return { type: "chest", value: 1 };
-  if (tier % 5 === 0) return { type: "xp", value: 300 + tier * 4 };
-  return { type: "coins", value: 60 + tier * 8 };
+  if (tier % 5 === 0) return { type: "xp", value: 250 + tier * 2 };
+  return { type: "coins", value: 100 + tier * 6 };
 });
-
-/* ---------------- Ranks ---------------- */
-export const RANKS: { name: string; min: number; color: string }[] = [
-  { name: "Bronze", min: 0, color: "#c88a5c" },
-  { name: "Silver", min: 500, color: "#c8d0e0" },
-  { name: "Gold", min: 1500, color: "#ffd76b" },
-  { name: "Platinum", min: 3500, color: "#7bf3ff" },
-  { name: "Diamond", min: 7000, color: "#c39bff" },
-  { name: "Master", min: 12000, color: "#ff7bd1" },
-  { name: "Neon", min: 20000, color: "#a8ff5c" },
-];
-
-export const rankFor = (best: number) => {
-  let r = RANKS[0];
-  for (const x of RANKS) if (best >= x.min) r = x;
-  return r;
-};
 
 /* ---------------- Missions ---------------- */
 export type MissionStat =
@@ -836,7 +825,7 @@ export const defaultProg = (): Progression => ({
   backgroundStyle: "default",
   orbStyle: "cyan",
   spikeStyle: "neon",
-  bestByMode: { classic: 0, hardcore: 0, zen: 0, blitz: 0 },
+  bestByMode: { classic: 0, hardcore: 0, zen: 0, blitz: 0, surge: 0, treasure: 0 },
   missions: generateMissions(),
   inventory: {},
   achievements: {},

@@ -2,7 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
-const ModeEnum = z.enum(["classic", "hardcore", "zen", "blitz"]);
+const ModeEnum = z.enum(["classic", "hardcore", "zen", "blitz", "surge", "treasure"]);
 
 /** Envoie le meilleur score du joueur (garde uniquement le meilleur par mode). */
 export const submitScore = createServerFn({ method: "POST" })

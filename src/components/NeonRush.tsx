@@ -2,14 +2,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import {
-  Award,
+  BarChart3,
   Crown,
   Gamepad2,
   Gift,
   Globe2,
   Handshake,
   HelpCircle,
-  Medal,
+  UserRound,
   Play,
   RotateCcw,
   Settings2,
@@ -17,7 +17,6 @@ import {
   ShoppingBag,
   Sparkles,
   Target,
-  UsersRound,
 } from "lucide-react";
 import { LANGS, type Lang, t } from "@/lib/i18n";
 import {
@@ -27,7 +26,6 @@ import {
   PASS_XP_PER_TIER,
   PASS_REWARDS,
   REWARD_MULT,
-  rankFor,
   loadProg,
   saveProg,
   defaultProg,
@@ -43,7 +41,6 @@ import {
   skinPowerFor,
   rollChestReward,
   CHEST_COST,
-  RANKS,
   type GameMode,
   type Progression,
   type SkinId,
@@ -67,7 +64,13 @@ import {
   fetchMyRank,
   fetchMyBests,
 } from "@/lib/leaderboard.functions";
-import { getMyProfile, setDisplayName, NAME_RE } from "@/lib/profile.functions";
+import {
+  fetchPublicProfile,
+  getMyProfile,
+  setDisplayName,
+  NAME_RE,
+  type PublicPlayerProfile,
+} from "@/lib/profile.functions";
 import {
   POWERS,
   POWER_MAP,
@@ -103,6 +106,23 @@ const bumpStats = (
     st[k] = k.startsWith("best") ? Math.max(st[k] ?? 0, v) : (st[k] ?? 0) + v;
   }
   return st;
+};
+
+const formatPlayTime = (milliseconds: number): string => {
+  const totalSeconds = Math.floor(milliseconds / 1000);
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  return hours > 0
+    ? `${hours}h ${minutes}m`
+    : minutes > 0
+      ? `${minutes}m ${seconds}s`
+      : `${seconds}s`;
+};
+
+const isSurgeWave = (elapsedMs: number) => {
+  const phase = elapsedMs % 24_000;
+  return phase >= 8_000 && phase < 16_000;
 };
 
 /* ----------------------------- Audio Engine ----------------------------- */
@@ -519,6 +539,22 @@ const traceStar = (
 
 const LANG_KEY = "neon-rush-lang";
 const TUTORIAL_KEY = "neon-rush-tutorial-seen";
+const TUTORIAL_STEPS = [
+  { icon: "⌖", title: "tutorialMovementTitle", body: "tutorialMovementBody" },
+  { icon: "✦", title: "tutorialOrbsTitle", body: "tutorialOrbsBody" },
+  { icon: "⚠", title: "tutorialHazardsTitle", body: "tutorialHazardsBody" },
+  { icon: "✧", title: "tutorialPickupsTitle", body: "tutorialPickupsBody" },
+  { icon: "⚡", title: "tutorialSkinPowerTitle", body: "tutorialSkinPowerBody" },
+  { icon: "🎮", title: "tutorialModesTitle", body: "tutorialModesBody" },
+  { icon: "◈", title: "tutorialSkinsTitle", body: "tutorialSkinsBody" },
+  { icon: "🎁", title: "tutorialProgressTitle", body: "tutorialProgressBody" },
+  { icon: "🛍", title: "tutorialShopTitle", body: "tutorialShopBody" },
+  { icon: "🌍", title: "tutorialRankTitle", body: "tutorialRankBody" },
+  { icon: "👤", title: "tutorialProfileTitle", body: "tutorialProfileBody" },
+  { icon: "🤝", title: "tutorialDuoTitle", body: "tutorialDuoBody" },
+  { icon: "🎃", title: "tutorialEventTitle", body: "tutorialEventBody" },
+  { icon: "⚙", title: "tutorialSettingsTitle", body: "tutorialSettingsBody" },
+] as const;
 const SKIN_POWER_UI: Record<SkinPowerId, { key: string; icon: string }> = {
   magnet: { key: "skinPowerMagnet", icon: "✥" },
   combo: { key: "skinPowerCombo", icon: "✦" },
@@ -535,6 +571,7 @@ export default function NeonRush() {
   const [utcDay, setUtcDay] = useState(() => chestDayKey());
   const [introVisible, setIntroVisible] = useState(true);
   const [tutorialVisible, setTutorialVisible] = useState(false);
+  const [tutorialStep, setTutorialStep] = useState(0);
   const tutorialPendingRef = useRef(false);
   const [prog, setProg] = useState<Progression>(() => defaultProg());
   const [mode, setMode] = useState<GameMode>("classic");
@@ -559,7 +596,7 @@ export default function NeonRush() {
     | "modes"
     | "skins"
     | "pass"
-    | "ranked"
+    | "profile"
     | "settings"
     | "leaderboard"
     | "missions"
@@ -601,9 +638,22 @@ export default function NeonRush() {
   const finishIntro = useCallback(() => {
     setIntroVisible(false);
     if (tutorialPendingRef.current) {
+      setTutorialStep(0);
       setTutorialVisible(true);
     }
   }, []);
+
+  const completeTutorial = () => {
+    if (tutorialPendingRef.current && user) {
+      try {
+        localStorage.setItem(`${TUTORIAL_KEY}:${user.id}`, "1");
+      } catch (error) {
+        console.error("Could not save the account tutorial preference.", error);
+      }
+    }
+    tutorialPendingRef.current = false;
+    setTutorialVisible(false);
+  };
 
   useEffect(() => {
     if (!user) {
@@ -617,7 +667,10 @@ export default function NeonRush() {
       console.error("Could not read the account tutorial preference.", error);
     }
     tutorialPendingRef.current = !tutorialSeen;
-    if (!tutorialSeen && !introVisible) setTutorialVisible(true);
+    if (!tutorialSeen && !introVisible) {
+      setTutorialStep(0);
+      setTutorialVisible(true);
+    }
   }, [user, introVisible]);
 
   useEffect(() => {
@@ -659,6 +712,14 @@ export default function NeonRush() {
     total: number;
   } | null>(null);
   const [lbLoading, setLbLoading] = useState(false);
+  const [profileNameDraft, setProfileNameDraft] = useState("");
+  const [profileSaving, setProfileSaving] = useState(false);
+  const [profileError, setProfileError] = useState("");
+  const [publicProfileName, setPublicProfileName] = useState<string | null>(null);
+  const [publicProfile, setPublicProfile] = useState<PublicPlayerProfile | null>(null);
+  const [publicProfileLoading, setPublicProfileLoading] = useState(false);
+  const [publicProfileLoadError, setPublicProfileLoadError] = useState(false);
+  const fetchPublicProfileFn = useServerFn(fetchPublicProfile);
 
   // ---- DUO COOP (2 joueurs, une équipe, un objectif commun) ----
   const DUO_DOWN_MS = 10000;
@@ -894,6 +955,56 @@ export default function NeonRush() {
     [setNameFn, claimGuestNameFn, user, deviceId],
   );
 
+  const saveProfileNickname = async () => {
+    setProfileError("");
+    setProfileSaving(true);
+    try {
+      const result = await saveNickname(profileNameDraft);
+      if (!result.ok) setProfileError(tr(result.reason === "TAKEN" ? "nickTaken" : "nickInvalid"));
+      else showToast(tr("profileSaved"));
+    } catch (error) {
+      console.error("Could not update the player nickname.", error);
+      setProfileError(tr("profileSaveError"));
+    } finally {
+      setProfileSaving(false);
+    }
+  };
+
+  useEffect(() => {
+    if (panel === "profile") {
+      setProfileNameDraft(prog.displayName ?? "");
+      setProfileError("");
+    }
+  }, [panel, prog.displayName]);
+
+  useEffect(() => {
+    if (!publicProfileName) {
+      setPublicProfile(null);
+      setPublicProfileLoadError(false);
+      return;
+    }
+    let cancel = false;
+    setPublicProfileLoading(true);
+    setPublicProfileLoadError(false);
+    fetchPublicProfileFn({ data: { name: publicProfileName } })
+      .then((result) => {
+        if (!cancel) setPublicProfile(result);
+      })
+      .catch((error) => {
+        console.error("Could not load the public player profile.", error);
+        if (!cancel) {
+          setPublicProfile(null);
+          setPublicProfileLoadError(true);
+        }
+      })
+      .finally(() => {
+        if (!cancel) setPublicProfileLoading(false);
+      });
+    return () => {
+      cancel = true;
+    };
+  }, [publicProfileName, fetchPublicProfileFn]);
+
   const signOut = async () => {
     await supabase.auth.signOut();
   };
@@ -903,9 +1014,7 @@ export default function NeonRush() {
   const equippedSkin = SKINS.find((s) => s.id === prog.equipped) || SKINS[0];
   const equippedFx = RARITY_FX[equippedSkin.rarity];
   const best = prog.bestByMode[mode] || 0;
-  /** Meilleur score toutes catégories : identique à celui du classement mondial. */
-  const globalBest = Math.max(0, ...MODES.map((m) => prog.bestByMode[m.id] || 0));
-  const rank = rankFor(globalBest);
+  const lifetimeRuns = prog.stats.runs ?? 0;
 
   const showToast = (msg: string) => {
     setToast(msg);
@@ -1045,7 +1154,9 @@ export default function NeonRush() {
       s.skinPowerCooldown = 0;
       s.skinPowerUiTimer = 0;
       skinPowerRequestRef.current = false;
-      s.duration = opts?.durationMs ?? (m === "blitz" ? 60000 : 0);
+      s.duration =
+        opts?.durationMs ??
+        (m === "blitz" ? 60_000 : m === "surge" ? 90_000 : m === "treasure" ? 75_000 : 0);
       setMode(m);
       setHalloweenRun(!!opts?.halloween);
       setHalloweenRunPumpkins(0);
@@ -1213,7 +1324,11 @@ export default function NeonRush() {
         runs: 1,
         orbs: stateRef.current.runOrbs || 0,
         powers: stateRef.current.runPowers || 0,
+        scoreTotal: res.teamScore,
+        playTimeMs: res.survivedMs,
+        trackedRuns: 1,
         bestCombo: stateRef.current.maxCombo,
+        bestSurvivalMs: res.survivedMs,
       }),
     }));
     const s = stateRef.current;
@@ -1415,8 +1530,13 @@ export default function NeonRush() {
             runs: 1,
             orbs: st.runOrbs || 0,
             powers: st.runPowers || 0,
+            scoreTotal: finalScore,
+            playTimeMs: st.t,
+            trackedRuns: 1,
             bestScore: finalScore,
             bestCombo: finalCombo,
+            bestSurvivalMs: st.t,
+            [`${finalMode}Runs`]: 1,
           }),
           halloweenPumpkins:
             st.halloween && st.runPumpkins > 0
@@ -1500,9 +1620,25 @@ export default function NeonRush() {
         dy = towards.y - y;
       const len = Math.hypot(dx, dy) || 1;
       const speed = rand(1.2, 2.4) * s.difficulty;
-      const hazardChance = s.halloween ? 0.42 : s.mode === "hardcore" ? 0.55 : 0.32;
+      const surgeWave = s.mode === "surge" && isSurgeWave(s.t);
+      const hazardChance = s.halloween
+        ? 0.42
+        : s.mode === "hardcore"
+          ? 0.55
+          : s.mode === "surge"
+            ? surgeWave
+              ? 0.58
+              : 0.14
+            : s.mode === "treasure"
+              ? 0.12
+              : s.mode === "zen"
+                ? 0.14
+                : s.mode === "blitz"
+                  ? 0.28
+                  : 0.32;
       const isHazard = Math.random() < hazardChance;
-      const isBonusOrb = !s.duo && !isHazard && Math.random() < 0.055;
+      const isBonusOrb =
+        !s.duo && !isHazard && Math.random() < (s.mode === "treasure" ? 0.4 : 0.055);
       const orbStyle = visualStyle("orb", s.orbStyle);
       const spikeStyle = visualStyle("spikes", s.spikeStyle);
       s.entities.push({
@@ -1781,10 +1917,21 @@ export default function NeonRush() {
           setSkinPowerCooldownUi(Math.ceil(s.skinPowerCooldown / 1000));
           setSkinPowerActiveUi(Math.ceil(s.skinPowerTimer / 1000));
         }
+        const minutes = s.t / 60_000;
+        const surgeWave = s.mode === "surge" && isSurgeWave(s.t);
         s.difficulty =
-          (s.mode === "hardcore" ? 1.5 : 1) +
-          Math.min(2.5, s.t / 30000) +
-          (s.halloween && s.t >= 60_000 ? 0.45 : s.halloween && s.t >= 30_000 ? 0.2 : 0);
+          (s.mode === "hardcore"
+            ? 1.2 + Math.min(1.4, minutes * 0.6)
+            : s.mode === "zen"
+              ? 0.7 + Math.min(0.25, minutes * 0.3)
+              : s.mode === "surge"
+                ? (surgeWave ? 1.3 : 0.75) + Math.min(surgeWave ? 0.4 : 0.25, minutes * 0.2)
+                : s.mode === "treasure"
+                  ? 0.82 + Math.min(0.35, minutes * 0.35)
+                  : s.mode === "blitz"
+                    ? 1.05 + Math.min(0.65, minutes * 0.55)
+                    : 1 + Math.min(1.2, minutes * 0.45)) +
+          (s.halloween && s.t >= 60_000 ? 0.3 : s.halloween && s.t >= 30_000 ? 0.15 : 0);
         if (s.lo.slowStart && s.t < 15000) s.difficulty *= 0.75;
         if (s.duration > 0) {
           const left = Math.max(0, s.duration - s.t);
@@ -1793,12 +1940,14 @@ export default function NeonRush() {
             gameOverNow();
           }
         }
-        const spawnBase = 700;
-        const spawnMin = 260;
+        const spawnBase = 780;
+        const spawnMin = 300;
         const spawnRate = Math.max(
           spawnMin,
           spawnBase -
-            s.t * 0.05 -
+            s.t * 0.04 -
+            (surgeWave ? 100 : 0) -
+            (s.mode === "treasure" ? 40 : 0) -
             (s.halloween && s.t >= 60_000 ? 110 : s.halloween && s.t >= 30_000 ? 55 : 0),
         );
         if (s.t - s.lastSpawn > spawnRate) {
@@ -1840,7 +1989,9 @@ export default function NeonRush() {
           });
         }
         // Hardcore aussi a droit aux power-ups (plus rares) : ils sont indispensables au feeling
-        const powerEvery = (s.mode === "hardcore" ? 13000 : 8500) * (s.lo.powerHunter ? 0.7 : 1);
+        const powerEvery =
+          (s.mode === "hardcore" ? 14_000 : s.mode === "treasure" ? 9_000 : 8_500) *
+          (s.lo.powerHunter ? 0.7 : 1);
         if (s.t - s.lastPower > powerEvery) {
           spawnPower();
           s.lastPower = s.t;
@@ -1988,9 +2139,12 @@ export default function NeonRush() {
                 (s.lo.scoreBoost ? 1.15 : 1) *
                 (lucky ? 2 : 1);
               const isBonusOrb = e.kind === "bonusOrb";
-              const gain = Math.round((10 + s.combo * 2 + (isBonusOrb ? 100 : 0)) * mul);
+              const treasureBonus = isBonusOrb && s.mode === "treasure" ? 1.5 : 1;
+              const gain = Math.round(
+                (10 + s.combo * 2 + (isBonusOrb ? 100 : 0)) * mul * treasureBonus,
+              );
               if (isBonusOrb) {
-                s.runBonusCoins += 25;
+                s.runBonusCoins += s.mode === "treasure" ? 35 : 25;
                 notifyRef.current(trRef.current("mechanicGoldOrb"), {
                   kind: "epic",
                   icon: "🌟",
@@ -2717,17 +2871,24 @@ export default function NeonRush() {
 
   const claimTier = (i: number) => {
     if (i >= passTier || prog.claimed.includes(i)) return;
-    const reward = PASS_REWARDS[i];
+    const reward = PASS_REWARDS[i]!;
     setProg((p) => {
       let np = { ...p, claimed: [...p.claimed, i] };
       if (reward.type === "coins") np = { ...np, coins: np.coins + (reward.value as number) };
       else if (reward.type === "xp") np = { ...np, xp: np.xp + (reward.value as number) };
       else if (reward.type === "chest")
-        np = { ...np, coins: np.coins + 200 * (reward.value as number) };
+        np = {
+          ...np,
+          inventory: {
+            ...np.inventory,
+            coinChests: (np.inventory.coinChests ?? 0) + (reward.value as number),
+          },
+        };
       else if (reward.type === "skin") {
         const sk = reward.value as SkinId;
         if (!np.owned.includes(sk)) np = { ...np, owned: [...np.owned, sk] };
       }
+      if ((i + 1) % 10 === 0) np = { ...np, gems: np.gems + 15 };
       return np;
     });
     showToast(tr("claimed"));
@@ -3046,8 +3207,7 @@ export default function NeonRush() {
               count: missionReady,
             }
           : null,
-      leaderboard: { sig: `r${rank.id}:${myRank?.rank ?? "na"}`, count: 0 },
-      ranked: { sig: `rk${rank.id}`, count: 0 },
+      leaderboard: { sig: `r${myRank?.rank ?? "na"}`, count: 0 },
       shop: chestLeft > 0 ? { sig: `${chestDayKey()}:${chestLeft}`, count: chestLeft } : null,
       dailyReward: dailyRewardClaimed ? null : { sig: `daily:${loginRewardDay}`, count: 1 },
       skins: ownedCount > 1 ? { sig: `s${ownedCount}`, count: 0 } : null,
@@ -3058,7 +3218,6 @@ export default function NeonRush() {
     prog.missions,
     prog.stats,
     prog.owned,
-    rank.id,
     myRank,
     chestLeft,
     dailyRewardClaimed,
@@ -3157,11 +3316,12 @@ export default function NeonRush() {
           <div className="mt-1 text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
             {tr("best")} : <span className="text-glow-yellow">{best}</span>
           </div>
-          {running && (mode === "blitz" || duoActive) && (
-            <div className="mt-1 text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
-              {tr("time")} : <span className="text-glow-magenta">{timeLeft}s</span>
-            </div>
-          )}
+          {running &&
+            (mode === "blitz" || mode === "surge" || mode === "treasure" || duoActive) && (
+              <div className="mt-1 text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+                {tr("time")} : <span className="text-glow-magenta">{timeLeft}s</span>
+              </div>
+            )}
           {running && halloweenRun && (
             <>
               <div className="mt-1 text-[10px] font-bold uppercase tracking-[0.12em] text-[#ffb347]">
@@ -3358,11 +3518,11 @@ export default function NeonRush() {
 
             <div className="main-menu__status">
               <div className="main-menu__stat">
-                <Award aria-hidden="true" />
+                <Gamepad2 aria-hidden="true" />
                 <span>
-                  <small>{tr("rank")}</small>
-                  <strong style={{ color: rank.color, textShadow: `0 0 12px ${rank.color}` }}>
-                    {rank.name}
+                  <small>{tr("mode")}</small>
+                  <strong>
+                    {tr(MODES.find((item) => item.id === mode)?.nameKey ?? "modeClassic")}
                   </strong>
                 </span>
               </div>
@@ -3376,10 +3536,10 @@ export default function NeonRush() {
                 </span>
               </div>
               <div className="main-menu__stat">
-                <Medal aria-hidden="true" />
+                <BarChart3 aria-hidden="true" />
                 <span>
                   <small>{tr("best")}</small>
-                  <strong>{globalBest.toLocaleString()}</strong>
+                  <strong>{best.toLocaleString()}</strong>
                 </span>
               </div>
             </div>
@@ -3545,23 +3705,13 @@ export default function NeonRush() {
                 {badge("leaderboard") && <NotifBadge />}
               </button>
               <button
-                onClick={() => setPanel("ranked")}
+                onClick={() => setPanel("profile")}
                 className="main-menu__nav-button main-menu__nav-button--magenta"
               >
                 <span className="main-menu__nav-icon">
-                  <Medal aria-hidden="true" />
+                  <UserRound aria-hidden="true" />
                 </span>
-                <span>{tr("ranked")}</span>
-                {badge("ranked") && <NotifBadge />}
-              </button>
-              <button
-                onClick={() => setPanel("duo")}
-                className="main-menu__nav-button main-menu__nav-button--magenta main-menu__nav-button--wide"
-              >
-                <span className="main-menu__nav-icon">
-                  <UsersRound aria-hidden="true" />
-                </span>
-                <span>{tr("duo")}</span>
+                <span>{tr("profile")}</span>
               </button>
               <button
                 onClick={() => setPanel("settings")}
@@ -3929,21 +4079,45 @@ export default function NeonRush() {
 
             {panel === "pass" && (
               <div>
+                <section className="mb-4 rounded-2xl border border-[color:var(--neon-magenta)]/40 bg-gradient-to-br from-[color:var(--neon-magenta)]/15 via-[color:var(--neon-cyan)]/10 to-black/40 p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="font-display text-sm font-black uppercase tracking-[0.16em] text-glow-magenta">
+                        {tr("passSeason")}
+                      </div>
+                      <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
+                        {tr("passSeasonDesc")}
+                      </p>
+                    </div>
+                    <div className="shrink-0 rounded-xl border border-[color:var(--neon-yellow)]/40 bg-black/30 px-3 py-2 text-center">
+                      <div className="text-[9px] uppercase tracking-widest text-muted-foreground">
+                        {tr("tier")}
+                      </div>
+                      <div className="font-display text-xl font-black text-glow-yellow">
+                        {passTier}
+                        <span className="text-xs text-muted-foreground">/{PASS_TIERS}</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="mt-3 flex items-center justify-between text-[10px] uppercase tracking-[0.15em]">
+                    <span className="text-glow-cyan">{tr("passRewardsSummary")}</span>
+                    <span className="text-glow-yellow">{prog.xp} XP</span>
+                  </div>
+                </section>
                 <div className="mb-3">
                   <div className="flex items-center justify-between text-[10px] uppercase tracking-[0.2em]">
                     <span className="text-glow-cyan">
-                      {tr("tier")} {passTier}/{PASS_TIERS}
+                      {passTier >= PASS_TIERS
+                        ? tr("passComplete")
+                        : `${PASS_XP_PER_TIER - (prog.xp % PASS_XP_PER_TIER)} XP · ${tr("passProgress")}`}
                     </span>
-                    <span className="text-glow-yellow">{prog.xp} XP</span>
+                    <span className="text-muted-foreground">{tr("passGemBonus")} / 10</span>
                   </div>
                   <div className="mt-1 h-2 w-full rounded-full bg-black/40 overflow-hidden">
                     <div
                       className="h-full bg-gradient-to-r from-[color:var(--neon-cyan)] to-[color:var(--neon-magenta)]"
                       style={{ width: `${passProgressPct}%` }}
                     />
-                  </div>
-                  <div className="mt-2 text-[10px] uppercase tracking-[0.2em] text-muted-foreground text-center">
-                    {tr("passTier100")}
                   </div>
                 </div>
                 <div
@@ -3953,7 +4127,9 @@ export default function NeonRush() {
                   {PASS_REWARDS.map((r, i) => {
                     const unlocked = i < passTier;
                     const claimed = prog.claimed.includes(i);
-                    const isFinal = i === PASS_TIERS - 1;
+                    const rewardSkin =
+                      r.type === "skin" ? SKINS.find((skin) => skin.id === r.value) : null;
+                    const isSkinTier = r.type === "skin";
                     const isCurrent = i === Math.min(passTier, PASS_TIERS - 1);
                     const label =
                       r.type === "coins"
@@ -3962,20 +4138,27 @@ export default function NeonRush() {
                           ? `+${r.value} XP`
                           : r.type === "chest"
                             ? `🎁 ×${r.value}`
-                            : `✨ ${r.value}`;
+                            : `✨ ${rewardSkin?.name ?? r.value}`;
                     return (
                       <div
                         key={i}
                         data-tier={i}
-                        className={`rounded-xl border p-3 text-center ${isFinal ? "border-[color:var(--neon-magenta)] bg-[color:var(--neon-magenta)]/10" : unlocked ? "border-[color:var(--neon-cyan)]/60 bg-[color:var(--neon-cyan)]/10" : "border-border/40 bg-black/20 opacity-60"} ${isCurrent ? "ring-2 ring-[color:var(--neon-yellow)]" : ""}`}
+                        className={`rounded-xl border p-3 text-center ${isSkinTier ? "border-[color:var(--neon-magenta)] bg-[color:var(--neon-magenta)]/10" : unlocked ? "border-[color:var(--neon-cyan)]/60 bg-[color:var(--neon-cyan)]/10" : "border-border/40 bg-black/20 opacity-60"} ${isCurrent ? "ring-2 ring-[color:var(--neon-yellow)]" : ""}`}
                       >
                         <div className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
                           {tr("tier")} {i + 1}
-                          {isFinal ? ` · ${tr("exclusive")}` : ""}
+                          {isSkinTier
+                            ? ` · ${i === PASS_TIERS - 1 ? tr("exclusive") : tr("passSkinReward")}`
+                            : ""}
                         </div>
                         <div className="mt-1 font-display text-sm font-bold text-glow-yellow">
                           {label}
                         </div>
+                        {(i + 1) % 10 === 0 && (
+                          <div className="mt-1 text-[9px] font-bold uppercase tracking-wider text-glow-cyan">
+                            {tr("passGemBonus")}
+                          </div>
+                        )}
                         <button
                           onClick={() => claimTier(i)}
                           disabled={!unlocked || claimed}
@@ -4043,9 +4226,122 @@ export default function NeonRush() {
               </div>
             )}
 
+            {panel === "profile" && (
+              <div className="space-y-4 max-h-[68vh] overflow-y-auto">
+                <section className="rounded-2xl border border-[color:var(--neon-cyan)]/40 bg-[color:var(--neon-cyan)]/10 p-4">
+                  <div className="flex items-center gap-3">
+                    <UserRound className="h-8 w-8 text-glow-cyan" aria-hidden="true" />
+                    <div className="min-w-0">
+                      <h3 className="truncate font-display text-lg font-black text-glow-cyan">
+                        {prog.displayName || tr("guestPlayer")}
+                      </h3>
+                      <p className="text-[10px] uppercase tracking-widest text-muted-foreground">
+                        {user ? tr("accountProfile") : tr("guestProfile")}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="mt-4 grid grid-cols-2 gap-2">
+                    <label className="col-span-2 text-[10px] uppercase tracking-widest text-muted-foreground">
+                      {tr("changeNickname")}
+                      <input
+                        value={profileNameDraft}
+                        onChange={(event) => setProfileNameDraft(event.target.value)}
+                        minLength={3}
+                        maxLength={20}
+                        autoComplete="nickname"
+                        className="mt-1 w-full rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm text-foreground outline-none focus:border-[color:var(--neon-cyan)]"
+                      />
+                    </label>
+                    <button
+                      onClick={() => void saveProfileNickname()}
+                      disabled={
+                        profileSaving || profileNameDraft.trim() === (prog.displayName ?? "")
+                      }
+                      className="col-span-2 rounded-lg bg-[color:var(--neon-magenta)]/20 px-3 py-2 text-xs font-black uppercase tracking-widest text-glow-magenta disabled:opacity-40"
+                    >
+                      {profileSaving ? "…" : tr("saveNickname")}
+                    </button>
+                    {profileError && (
+                      <p role="alert" className="col-span-2 text-xs text-red-300">
+                        {profileError}
+                      </p>
+                    )}
+                  </div>
+                  <p className="mt-2 text-[10px] text-muted-foreground">
+                    {tr("statsTrackingNote")}
+                  </p>
+                </section>
+
+                <section>
+                  <h3 className="mb-2 font-display text-xs font-black uppercase tracking-[0.2em] text-glow-yellow">
+                    {tr("careerStats")}
+                  </h3>
+                  <div className="grid grid-cols-2 gap-2">
+                    {[
+                      [tr("statRuns"), lifetimeRuns.toLocaleString()],
+                      [tr("statScoreTotal"), (prog.stats.scoreTotal ?? 0).toLocaleString()],
+                      [
+                        tr("statAverageScore"),
+                        prog.stats.trackedRuns
+                          ? Math.round(
+                              (prog.stats.scoreTotal ?? 0) / prog.stats.trackedRuns,
+                            ).toLocaleString()
+                          : "0",
+                      ],
+                      [tr("statPlayTime"), formatPlayTime(prog.stats.playTimeMs ?? 0)],
+                      [tr("statLongestRun"), formatPlayTime(prog.stats.bestSurvivalMs ?? 0)],
+                      [tr("statOrbs"), (prog.stats.orbs ?? 0).toLocaleString()],
+                      [tr("statPowerups"), (prog.stats.powers ?? 0).toLocaleString()],
+                      [tr("statBestCombo"), (prog.stats.bestCombo ?? 0).toLocaleString()],
+                      [tr("statDuoRuns"), (prog.stats.duoRuns ?? 0).toLocaleString()],
+                      [tr("statRevives"), (prog.stats.revives ?? 0).toLocaleString()],
+                      [tr("statCollection"), `${prog.owned.length}/${SKINS.length}`],
+                      [tr("statLevel"), `${prog.level} · ${prog.xp.toLocaleString()} XP`],
+                    ].map(([label, value]) => (
+                      <div
+                        key={label}
+                        className="rounded-xl border border-white/10 bg-black/25 p-3"
+                      >
+                        <div className="text-[9px] uppercase tracking-widest text-muted-foreground">
+                          {label}
+                        </div>
+                        <div className="mt-1 font-display text-sm font-black text-glow-cyan">
+                          {value}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+
+                <section>
+                  <h3 className="mb-2 font-display text-xs font-black uppercase tracking-[0.2em] text-glow-magenta">
+                    {tr("modeRecords")}
+                  </h3>
+                  <div className="space-y-1">
+                    {MODES.map((item) => (
+                      <div
+                        key={item.id}
+                        className="flex items-center justify-between rounded-lg border border-white/10 bg-black/25 px-3 py-2"
+                      >
+                        <span className="text-xs font-bold">{tr(item.nameKey)}</span>
+                        <span className="text-right">
+                          <span className="block font-display text-sm font-black text-glow-yellow">
+                            {(prog.bestByMode[item.id] ?? 0).toLocaleString()}
+                          </span>
+                          <span className="block text-[9px] text-muted-foreground">
+                            {(prog.stats[`${item.id}Runs`] ?? 0).toLocaleString()} {tr("statRuns")}
+                          </span>
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              </div>
+            )}
+
             {panel === "leaderboard" && (
               <div>
-                <div className="mb-3 grid grid-cols-4 gap-1 text-[10px] uppercase tracking-[0.2em]">
+                <div className="mb-3 grid grid-cols-3 gap-1 text-[10px] uppercase tracking-[0.2em]">
                   {MODES.map((m) => (
                     <button
                       key={m.id}
@@ -4083,9 +4379,13 @@ export default function NeonRush() {
                       ? user.id === row.user_id
                       : row.guest && row.display_name === prog.displayName;
                     return (
-                      <div
+                      <button
+                        type="button"
                         key={`${lbMode}-${idx}-${row.guest ? "g" : "a"}-${row.user_id ?? row.display_name}`}
-                        className={`flex items-center justify-between rounded-lg border px-3 py-2 ${isMe ? "border-[color:var(--neon-cyan)] bg-[color:var(--neon-cyan)]/10" : "border-border/40 bg-black/20"}`}
+                        onClick={() => row.display_name && setPublicProfileName(row.display_name)}
+                        disabled={!row.display_name}
+                        title={tr("openPlayerProfile")}
+                        className={`flex w-full items-center justify-between rounded-lg border px-3 py-2 text-left ${isMe ? "border-[color:var(--neon-cyan)] bg-[color:var(--neon-cyan)]/10" : "border-border/40 bg-black/20"}`}
                       >
                         <div className="flex items-center gap-2 min-w-0">
                           <span
@@ -4100,51 +4400,119 @@ export default function NeonRush() {
                         <span className="font-display font-black text-glow-cyan tabular-nums">
                           {row.score}
                         </span>
-                      </div>
+                      </button>
                     );
                   })}
                   {!lbLoading && lbRows.length === 0 && (
                     <div className="text-center text-xs text-muted-foreground py-4">—</div>
                   )}
                 </div>
-              </div>
-            )}
-
-            {panel === "ranked" && (
-              <div className="space-y-2">
-                <div className="text-center mb-2">
-                  <div className="text-[10px] uppercase tracking-[0.3em] text-muted-foreground">
-                    {tr("rank")}
-                  </div>
-                  <div
-                    className="font-display text-3xl font-black"
-                    style={{ color: rank.color, textShadow: `0 0 20px ${rank.color}` }}
-                  >
-                    {rank.name}
-                  </div>
-                </div>
-                {RANKS.map((rk) => {
-                  const achieved = globalBest >= rk.min;
-                  return (
-                    <div
-                      key={rk.name}
-                      className={`flex items-center justify-between rounded-lg border p-3 ${achieved ? "border-[color:var(--neon-cyan)]/60 bg-[color:var(--neon-cyan)]/10" : "border-border/40 bg-black/20 opacity-60"}`}
-                    >
-                      <span
-                        className="font-display font-bold uppercase tracking-widest"
-                        style={{ color: rk.color }}
+                {publicProfileName && (
+                  <section className="mt-3 rounded-xl border border-[color:var(--neon-magenta)]/40 bg-black/40 p-3">
+                    <div className="mb-2 flex items-center justify-between">
+                      <h3 className="font-display text-sm font-black text-glow-magenta">
+                        {publicProfileName}
+                      </h3>
+                      <button
+                        onClick={() => setPublicProfileName(null)}
+                        className="rounded-md px-2 py-1 text-xs text-muted-foreground"
                       >
-                        {rk.name}
-                      </span>
-                      <span className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
-                        ≥ {rk.min}
-                      </span>
+                        {tr("closeProfile")}
+                      </button>
                     </div>
-                  );
-                })}
-                <div className="mt-3 text-[10px] uppercase tracking-[0.2em] text-muted-foreground text-center">
-                  {tr("best")}: {globalBest}
-                </div>
+                    {publicProfileLoading ? (
+                      <p className="text-xs text-muted-foreground">…</p>
+                    ) : publicProfile ? (
+                      <>
+                        {publicProfile.equipped_skin && (
+                          <p className="mb-2 text-[10px] uppercase tracking-wider text-muted-foreground">
+                            {tr("equipped")}:{" "}
+                            {SKINS.find((skin) => skin.id === publicProfile.equipped_skin)?.name ??
+                              publicProfile.equipped_skin}
+                          </p>
+                        )}
+                        {!publicProfile.guest ? (
+                          <div className="grid grid-cols-2 gap-2">
+                            {[
+                              [tr("statRuns"), (publicProfile.stats.runs ?? 0).toLocaleString()],
+                              [
+                                tr("statScoreTotal"),
+                                (publicProfile.stats.scoreTotal ?? 0).toLocaleString(),
+                              ],
+                              [
+                                tr("statAverageScore"),
+                                publicProfile.stats.trackedRuns
+                                  ? Math.round(
+                                      (publicProfile.stats.scoreTotal ?? 0) /
+                                        publicProfile.stats.trackedRuns,
+                                    ).toLocaleString()
+                                  : "0",
+                              ],
+                              [
+                                tr("statPlayTime"),
+                                formatPlayTime(publicProfile.stats.playTimeMs ?? 0),
+                              ],
+                              [
+                                tr("statLongestRun"),
+                                formatPlayTime(publicProfile.stats.bestSurvivalMs ?? 0),
+                              ],
+                              [tr("statOrbs"), (publicProfile.stats.orbs ?? 0).toLocaleString()],
+                              [
+                                tr("statPowerups"),
+                                (publicProfile.stats.powers ?? 0).toLocaleString(),
+                              ],
+                              [
+                                tr("statBestCombo"),
+                                (publicProfile.stats.bestCombo ?? 0).toLocaleString(),
+                              ],
+                              [
+                                tr("statDuoRuns"),
+                                (publicProfile.stats.duoRuns ?? 0).toLocaleString(),
+                              ],
+                              [
+                                tr("statRevives"),
+                                (publicProfile.stats.revives ?? 0).toLocaleString(),
+                              ],
+                              [
+                                tr("statLevel"),
+                                `${publicProfile.level ?? 1} · ${publicProfile.xp?.toLocaleString() ?? "—"} XP`,
+                              ],
+                              [
+                                tr("statCollection"),
+                                `${publicProfile.skin_count ?? 0}/${SKINS.length}`,
+                              ],
+                            ].map(([label, value]) => (
+                              <div key={label} className="rounded-lg bg-white/5 p-2">
+                                <div className="text-[9px] uppercase tracking-wider text-muted-foreground">
+                                  {label}
+                                </div>
+                                <strong>{value}</strong>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="mb-2 text-[10px] text-muted-foreground">
+                            {tr("guestPublicStatsNotice")}
+                          </p>
+                        )}
+                        <div className="mt-2 space-y-1">
+                          {MODES.map((item) => (
+                            <div key={item.id} className="flex justify-between text-xs">
+                              <span>{tr(item.nameKey)}</span>
+                              <strong className="text-glow-yellow">
+                                {(publicProfile.best_by_mode[item.id] ?? 0).toLocaleString()}
+                              </strong>
+                            </div>
+                          ))}
+                        </div>
+                      </>
+                    ) : (
+                      <p className="text-xs text-muted-foreground">
+                        {tr(publicProfileLoadError ? "profileLoadError" : "profileUnavailable")}
+                      </p>
+                    )}
+                  </section>
+                )}
               </div>
             )}
 
@@ -4194,7 +4562,11 @@ export default function NeonRush() {
                   {muted ? `🔇 ${tr("muted")}` : `🔊 ${tr("sound")}`}
                 </button>
                 <button
-                  onClick={() => setTutorialVisible(true)}
+                  onClick={() => {
+                    tutorialPendingRef.current = false;
+                    setTutorialStep(0);
+                    setTutorialVisible(true);
+                  }}
                   className="mt-3 w-full panel-neon rounded-lg py-2 text-xs uppercase tracking-widest text-glow-cyan"
                 >
                   {tr("tutorialReplay")}
@@ -4210,52 +4582,104 @@ export default function NeonRush() {
           role="dialog"
           aria-modal="true"
           aria-labelledby="tutorial-title"
+          onKeyDown={(event) => {
+            if (event.key === "ArrowRight") {
+              event.preventDefault();
+              setTutorialStep((step) => Math.min(TUTORIAL_STEPS.length - 1, step + 1));
+            } else if (event.key === "ArrowLeft") {
+              event.preventDefault();
+              setTutorialStep((step) => Math.max(0, step - 1));
+            } else if (event.key === "Escape") {
+              completeTutorial();
+            }
+          }}
         >
           <div className="tutorial-card panel-neon">
-            <div className="text-[10px] uppercase tracking-[0.35em] text-glow-cyan">NEON RUSH</div>
-            <h2
-              id="tutorial-title"
-              className="mt-2 font-display text-2xl font-black uppercase tracking-[0.12em] text-glow-magenta"
+            <div className="flex items-center justify-between gap-3">
+              <div className="text-left">
+                <div className="text-[10px] uppercase tracking-[0.35em] text-glow-cyan">
+                  NEON RUSH · {tr("tutorialOverview")}
+                </div>
+                <h2
+                  id="tutorial-title"
+                  className="mt-1 font-display text-xl font-black uppercase tracking-[0.12em] text-glow-magenta"
+                >
+                  {tr("tutorialTitle")}
+                </h2>
+                <p className="mt-1 text-xs text-muted-foreground">{tr("tutorialIntro")}</p>
+              </div>
+              <button
+                type="button"
+                onClick={completeTutorial}
+                className="rounded-lg px-2 py-1 text-[10px] uppercase tracking-wider text-muted-foreground hover:text-foreground"
+              >
+                {tr("tutorialSkip")}
+              </button>
+            </div>
+            <div className="mt-5 flex items-center justify-between text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+              <span aria-live="polite">
+                {tr("tutorialStep")} {tutorialStep + 1} / {TUTORIAL_STEPS.length}
+              </span>
+              <span aria-hidden="true">← →</span>
+            </div>
+            <div
+              className="mt-2 h-1.5 overflow-hidden rounded-full bg-black/50"
+              role="progressbar"
+              aria-label={tr("tutorialOverview")}
+              aria-valuemin={1}
+              aria-valuemax={TUTORIAL_STEPS.length}
+              aria-valuenow={tutorialStep + 1}
             >
-              {tr("tutorialTitle")}
-            </h2>
-            <p className="mt-2 text-sm text-muted-foreground">{tr("tutorialIntro")}</p>
-            <ol className="mt-5 space-y-3 text-left">
-              {[
-                ["⌖", "tutorialMove"],
-                ["✦", "tutorialCollect"],
-                ["⚡", "tutorialCombo"],
-              ].map(([icon, key], index) => (
-                <li key={key} className="flex items-start gap-3 rounded-xl bg-black/25 p-3">
-                  <span className="font-display text-xl font-black text-glow-cyan">{icon}</span>
-                  <span>
-                    <span className="text-[10px] uppercase tracking-[0.2em] text-glow-yellow">
-                      {index + 1}
-                    </span>
-                    <span className="mt-1 block text-xs leading-relaxed text-foreground/90">
-                      {tr(key)}
-                    </span>
-                  </span>
-                </li>
-              ))}
-            </ol>
-            <button
-              autoFocus
-              onClick={() => {
-                if (tutorialPendingRef.current) {
-                  try {
-                    if (user) localStorage.setItem(`${TUTORIAL_KEY}:${user.id}`, "1");
-                  } catch (error) {
-                    console.error("Could not save the account tutorial preference.", error);
+              <div
+                className="h-full rounded-full bg-gradient-to-r from-[color:var(--neon-cyan)] to-[color:var(--neon-magenta)] transition-all duration-300"
+                style={{ width: `${((tutorialStep + 1) / TUTORIAL_STEPS.length) * 100}%` }}
+              />
+            </div>
+            <div className="mt-7 min-h-56" aria-live="polite">
+              <div
+                className="mx-auto grid h-16 w-16 place-items-center rounded-2xl border border-[color:var(--neon-cyan)]/60 bg-[color:var(--neon-cyan)]/10 text-4xl text-glow-cyan"
+                aria-hidden="true"
+              >
+                {TUTORIAL_STEPS[tutorialStep]!.icon}
+              </div>
+              <h3 className="mt-5 font-display text-lg font-black uppercase tracking-[0.08em] text-glow-cyan">
+                {tr(TUTORIAL_STEPS[tutorialStep]!.title)}
+              </h3>
+              <p className="mt-3 text-left text-sm leading-relaxed text-foreground/90">
+                {tr(TUTORIAL_STEPS[tutorialStep]!.body)}
+              </p>
+            </div>
+            <div className="mt-6 grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => setTutorialStep((step) => Math.max(0, step - 1))}
+                disabled={tutorialStep === 0}
+                className="rounded-xl border border-white/15 bg-black/30 px-3 py-3 font-display text-xs font-bold uppercase tracking-widest text-muted-foreground transition hover:border-white/40 disabled:opacity-35"
+              >
+                {tr("tutorialPrevious")}
+              </button>
+              {tutorialStep < TUTORIAL_STEPS.length - 1 ? (
+                <button
+                  type="button"
+                  autoFocus
+                  onClick={() =>
+                    setTutorialStep((step) => Math.min(TUTORIAL_STEPS.length - 1, step + 1))
                   }
-                  tutorialPendingRef.current = false;
-                }
-                setTutorialVisible(false);
-              }}
-              className="mt-5 w-full rounded-xl border border-[color:var(--neon-cyan)] bg-gradient-to-r from-[color:var(--neon-cyan)]/20 to-[color:var(--neon-magenta)]/20 px-5 py-3 font-display text-sm font-black uppercase tracking-[0.25em] text-glow-cyan transition hover:scale-[1.02]"
-            >
-              {tr("tutorialContinue")}
-            </button>
+                  className="rounded-xl border border-[color:var(--neon-cyan)] bg-gradient-to-r from-[color:var(--neon-cyan)]/20 to-[color:var(--neon-magenta)]/20 px-3 py-3 font-display text-xs font-black uppercase tracking-widest text-glow-cyan transition hover:scale-[1.02]"
+                >
+                  {tr("tutorialNext")}
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  autoFocus
+                  onClick={completeTutorial}
+                  className="rounded-xl border border-[color:var(--neon-cyan)] bg-gradient-to-r from-[color:var(--neon-cyan)]/20 to-[color:var(--neon-magenta)]/20 px-3 py-3 font-display text-xs font-black uppercase tracking-widest text-glow-cyan transition hover:scale-[1.02]"
+                >
+                  {tr("tutorialFinish")}
+                </button>
+              )}
+            </div>
           </div>
         </div>
       )}
