@@ -1,6 +1,9 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { useServerFn } from "@tanstack/react-start";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { verifySmileSignupPassword } from "@/lib/profile.functions";
+import { NAME_RE } from "@/lib/profile.functions";
 
 export const Route = createFileRoute("/auth")({
   head: () => ({
@@ -20,9 +23,12 @@ function AuthPage() {
   const [mode, setMode] = useState<"signin" | "signup">("signin");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [displayName, setDisplayName] = useState("");
+  const [smilePassword, setSmilePassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
+  const verifySmilePasswordFn = useServerFn(verifySmileSignupPassword);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -59,10 +65,25 @@ function AuthPage() {
     setBusy(true);
     try {
       if (mode === "signup") {
+        const name = displayName.trim();
+        if (!NAME_RE.test(name)) {
+          throw new Error(
+            "Choisis un pseudo valide (3 à 20 caractères : lettres, chiffres, . _ -).",
+          );
+        }
+        if (/smile/i.test(name)) {
+          const authorization = await verifySmilePasswordFn({
+            data: { name, password: smilePassword },
+          });
+          if (!authorization.ok) throw new Error("Mot de passe spécial incorrect.");
+        }
         const { error } = await supabase.auth.signUp({
           email,
           password,
-          options: { emailRedirectTo: window.location.origin },
+          options: {
+            emailRedirectTo: window.location.origin,
+            data: { name },
+          },
         });
         if (error) throw error;
         setMsg("Vérifie ton email pour confirmer ton compte.");
@@ -108,6 +129,35 @@ function AuthPage() {
         </div>
 
         <form onSubmit={submit} className="space-y-3">
+          {mode === "signup" && (
+            <>
+              <input
+                type="text"
+                required
+                autoComplete="nickname"
+                placeholder="Pseudo (3 à 20 caractères)"
+                minLength={3}
+                maxLength={20}
+                value={displayName}
+                onChange={(e) => {
+                  setDisplayName(e.target.value);
+                  if (!/smile/i.test(e.target.value)) setSmilePassword("");
+                }}
+                className="w-full rounded-lg border border-border/60 bg-black/40 px-4 py-3 text-sm text-foreground outline-none focus:border-[color:var(--neon-cyan)]"
+              />
+              {/smile/i.test(displayName) && (
+                <input
+                  type="password"
+                  required
+                  autoComplete="off"
+                  placeholder="Mot de passe requis pour un pseudo contenant Smile"
+                  value={smilePassword}
+                  onChange={(e) => setSmilePassword(e.target.value)}
+                  className="w-full rounded-lg border border-border/60 bg-black/40 px-4 py-3 text-sm text-foreground outline-none focus:border-[color:var(--neon-cyan)]"
+                />
+              )}
+            </>
+          )}
           <input
             type="email"
             required

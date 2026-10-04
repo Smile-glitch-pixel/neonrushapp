@@ -3,7 +3,10 @@ import { NAME_RE } from "@/lib/profile.functions";
 
 type Props = {
   tr: (k: string) => string;
-  onSave: (name: string) => Promise<{ ok: boolean; reason?: string; name?: string }>;
+  onSave: (
+    name: string,
+    smilePassword?: string,
+  ) => Promise<{ ok: boolean; reason?: string; name?: string }>;
   /** Absent en mode invité (rien à déconnecter). */
   onSignOut?: () => void;
   /** true = joueur non connecté (invité) : texte adapté. */
@@ -13,6 +16,7 @@ type Props = {
 /** Écran bloquant : un pseudo unique est obligatoire pour jouer/apparaître au classement. */
 export default function NicknameGate({ tr, onSave, onSignOut, guest = false }: Props) {
   const [name, setName] = useState("");
+  const [smilePassword, setSmilePassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -26,10 +30,21 @@ export default function NicknameGate({ tr, onSave, onSignOut, guest = false }: P
     setErr(null);
     setBusy(true);
     try {
-      const r = await onSave(v);
-      if (!r.ok) setErr(tr(r.reason === "TAKEN" ? "nickTaken" : "nickInvalid"));
-    } catch {
-      setErr(tr("nickInvalid"));
+      const r = await onSave(v, smilePassword);
+      if (!r.ok) {
+        setErr(
+          tr(
+            r.reason === "TAKEN"
+              ? "nickTaken"
+              : r.reason === "PASSWORD"
+                ? "smilePasswordInvalid"
+                : "nickInvalid",
+          ),
+        );
+      }
+    } catch (error) {
+      console.error("Could not validate the Smile nickname password.", error);
+      setErr(tr(/smile/i.test(v) ? "smilePasswordUnavailable" : "nickInvalid"));
     } finally {
       setBusy(false);
     }
@@ -51,12 +66,26 @@ export default function NicknameGate({ tr, onSave, onSignOut, guest = false }: P
             value={name}
             onChange={(e) => {
               setName(e.target.value);
+              if (!/smile/i.test(e.target.value)) setSmilePassword("");
               setErr(null);
             }}
             placeholder={tr("nickPlaceholder")}
             maxLength={20}
             className="w-full rounded-lg border border-border/60 bg-black/40 px-4 py-3 text-sm text-foreground outline-none focus:border-[color:var(--neon-cyan)]"
           />
+          {/smile/i.test(name) && (
+            <label className="block text-xs text-muted-foreground">
+              {tr("smilePasswordPrompt")}
+              <input
+                type="password"
+                value={smilePassword}
+                onChange={(e) => setSmilePassword(e.target.value)}
+                autoComplete="off"
+                required
+                className="mt-1 w-full rounded-lg border border-border/60 bg-black/40 px-4 py-3 text-sm text-foreground outline-none focus:border-[color:var(--neon-cyan)]"
+              />
+            </label>
+          )}
           <div className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
             {tr("nickRules")}
           </div>

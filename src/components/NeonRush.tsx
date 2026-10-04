@@ -63,6 +63,7 @@ import {
   fetchLeaderboard,
   fetchMyRank,
   fetchMyBests,
+  type LeaderboardMode,
 } from "@/lib/leaderboard.functions";
 import {
   fetchPublicProfile,
@@ -120,9 +121,19 @@ const formatPlayTime = (milliseconds: number): string => {
       : `${seconds}s`;
 };
 
+const RIFT_PERIOD_MS = 26_000;
+const RIFT_WARNING_MS = 3_000;
+const RIFT_ACTIVE_MS = 9_000;
+const RIFT_WARNING_START_MS = RIFT_PERIOD_MS - RIFT_ACTIVE_MS - RIFT_WARNING_MS;
+const RIFT_ACTIVE_START_MS = RIFT_PERIOD_MS - RIFT_ACTIVE_MS;
+
 const isSurgeWave = (elapsedMs: number) => {
-  const phase = elapsedMs % 24_000;
-  return phase >= 8_000 && phase < 16_000;
+  return elapsedMs % RIFT_PERIOD_MS >= RIFT_ACTIVE_START_MS;
+};
+
+const isSurgeTelegraph = (elapsedMs: number) => {
+  const phase = elapsedMs % RIFT_PERIOD_MS;
+  return phase >= RIFT_WARNING_START_MS && phase < RIFT_ACTIVE_START_MS;
 };
 
 /* ----------------------------- Audio Engine ----------------------------- */
@@ -454,7 +465,7 @@ type Entity = Vec & {
   r: number;
   life: number;
   maxLife: number;
-  kind: "orb" | "bonusOrb" | "hazard" | "power" | "particle" | "pumpkin" | "ghost";
+  kind: "orb" | "bonusOrb" | "hazard" | "power" | "particle" | "pumpkin" | "ghost" | "vault";
   color: string;
   power?: PowerId;
   angle?: number;
@@ -585,6 +596,8 @@ export default function NeonRush() {
   const [skinPowerActiveUi, setSkinPowerActiveUi] = useState(0);
   const [muted, setMuted] = useState(false);
   const [timeLeft, setTimeLeft] = useState(0);
+  const [relicsCarried, setRelicsCarried] = useState(0);
+  const [relicsDelivered, setRelicsDelivered] = useState(0);
   const [rewardEarned, setRewardEarned] = useState<{
     coins: number;
     xp: number;
@@ -696,7 +709,7 @@ export default function NeonRush() {
   }, []);
 
   const passListRef = useRef<HTMLDivElement>(null);
-  const [lbMode, setLbMode] = useState<GameMode>("classic");
+  const [lbMode, setLbMode] = useState<LeaderboardMode>("classic");
   type LbRow = {
     user_id: string | null;
     mode: string;
@@ -712,13 +725,16 @@ export default function NeonRush() {
     total: number;
   } | null>(null);
   const [lbLoading, setLbLoading] = useState(false);
+  const [lbError, setLbError] = useState(false);
   const [profileNameDraft, setProfileNameDraft] = useState("");
+  const [profileNamePassword, setProfileNamePassword] = useState("");
   const [profileSaving, setProfileSaving] = useState(false);
   const [profileError, setProfileError] = useState("");
   const [publicProfileName, setPublicProfileName] = useState<string | null>(null);
   const [publicProfile, setPublicProfile] = useState<PublicPlayerProfile | null>(null);
   const [publicProfileLoading, setPublicProfileLoading] = useState(false);
   const [publicProfileLoadError, setPublicProfileLoadError] = useState(false);
+  const publicProfileRef = useRef<HTMLElement>(null);
   const fetchPublicProfileFn = useServerFn(fetchPublicProfile);
 
   // ---- DUO COOP (2 joueurs, une équipe, un objectif commun) ----
@@ -911,7 +927,9 @@ export default function NeonRush() {
         const name = p?.display_name ?? null;
         const emailLocal = user.email?.split("@")[0] ?? null;
         // Un nom auto-généré depuis l'email n'est PAS un pseudo choisi.
-        const chosen = name && name !== emailLocal ? name : null;
+        const smileNameFromOAuth =
+          user.app_metadata?.provider !== "email" && name && /smile/i.test(name);
+        const chosen = name && name !== emailLocal && !smileNameFromOAuth ? name : null;
         setProfileName(chosen);
         setNeedNick(!chosen);
         if (chosen)
@@ -933,18 +951,18 @@ export default function NeonRush() {
   }, [user, hydrated, prog.displayName]);
 
   const saveNickname = useCallback(
-    async (raw: string) => {
+    async (raw: string, smilePassword?: string) => {
       const name = raw.trim();
       if (!user) {
         if (!deviceId) return { ok: false as const, reason: "INVALID" as const };
-        const r = await claimGuestNameFn({ data: { deviceId, name } });
+        const r = await claimGuestNameFn({ data: { deviceId, name, smilePassword } });
         if (r.ok) {
           setNeedNick(false);
           setProg((p) => ({ ...p, displayName: name }));
         }
         return r;
       }
-      const r = await setNameFn({ data: { name } });
+      const r = await setNameFn({ data: { name, smilePassword } });
       if (r.ok) {
         setProfileName(r.name);
         setNeedNick(false);
@@ -959,12 +977,23 @@ export default function NeonRush() {
     setProfileError("");
     setProfileSaving(true);
     try {
-      const result = await saveNickname(profileNameDraft);
-      if (!result.ok) setProfileError(tr(result.reason === "TAKEN" ? "nickTaken" : "nickInvalid"));
-      else showToast(tr("profileSaved"));
+      const result = await saveNickname(profileNameDraft, profileNamePassword);
+      if (!result.ok) {
+        setProfileError(
+          tr(
+            result.reason === "TAKEN"
+              ? "nickTaken"
+              : result.reason === "PASSWORD"
+                ? "smilePasswordInvalid"
+                : "nickInvalid",
+          ),
+        );
+      } else showToast(tr("profileSaved"));
     } catch (error) {
       console.error("Could not update the player nickname.", error);
-      setProfileError(tr("profileSaveError"));
+      setProfileError(
+        tr(/smile/i.test(profileNameDraft) ? "smilePasswordUnavailable" : "profileSaveError"),
+      );
     } finally {
       setProfileSaving(false);
     }
@@ -973,6 +1002,7 @@ export default function NeonRush() {
   useEffect(() => {
     if (panel === "profile") {
       setProfileNameDraft(prog.displayName ?? "");
+      setProfileNamePassword("");
       setProfileError("");
     }
   }, [panel, prog.displayName]);
@@ -1004,6 +1034,15 @@ export default function NeonRush() {
       cancel = true;
     };
   }, [publicProfileName, fetchPublicProfileFn]);
+
+  useEffect(() => {
+    if (!publicProfileName) return;
+    const timeout = window.setTimeout(
+      () => publicProfileRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" }),
+      60,
+    );
+    return () => window.clearTimeout(timeout);
+  }, [publicProfileName]);
 
   const signOut = async () => {
     await supabase.auth.signOut();
@@ -1068,6 +1107,9 @@ export default function NeonRush() {
     runPowers: 0,
     runPumpkins: 0,
     runBonusCoins: 0,
+    carriedRelics: 0,
+    deliveredRelics: 0,
+    lastVaultSpawn: 0,
     nextSurvivalMilestone: 30_000,
     lastPumpkinSpawn: 0,
     halloween: false,
@@ -1123,6 +1165,9 @@ export default function NeonRush() {
       s.runPowers = 0;
       s.runPumpkins = 0;
       s.runBonusCoins = 0;
+      s.carriedRelics = 0;
+      s.deliveredRelics = 0;
+      s.lastVaultSpawn = 0;
       s.nextSurvivalMilestone = 30_000;
       s.lastPumpkinSpawn = 0;
       s.halloween = !!opts?.halloween;
@@ -1170,6 +1215,8 @@ export default function NeonRush() {
       setReviveHold(0);
       clearNotifs();
       setTimeLeft(s.duration > 0 ? Math.ceil(s.duration / 1000) : 0);
+      setRelicsCarried(0);
+      setRelicsDelivered(0);
       setGameOver(false);
       setRunning(true);
       setPanel(null);
@@ -1516,10 +1563,12 @@ export default function NeonRush() {
       const earnedCoins = Math.floor((finalScore / 10) * mult) + run.runBonusCoins;
       const earnedXP = Math.floor((finalScore / 6) * mult);
       setProg((p) => {
-        const bestByMode = {
-          ...p.bestByMode,
-          [finalMode]: Math.max(p.bestByMode[finalMode] || 0, finalScore),
-        };
+        const bestByMode = run.halloween
+          ? p.bestByMode
+          : {
+              ...p.bestByMode,
+              [finalMode]: Math.max(p.bestByMode[finalMode] || 0, finalScore),
+            };
         const st = stateRef.current;
         return {
           ...p,
@@ -1563,27 +1612,36 @@ export default function NeonRush() {
       );
 
       // Classement mondial : comptes ET invités (pseudo obligatoire dans les deux cas)
+      const leaderboardMode: LeaderboardMode = run.halloween ? "halloween" : finalMode;
       if (user && finalScore > 0) {
         submitScoreFn({
           data: {
-            mode: finalMode,
+            mode: leaderboardMode,
             score: finalScore,
             display_name: prog.displayName ?? null,
             equipped_skin: prog.equipped,
           },
-        }).catch(() => {
-          /* noop */
+        }).catch((error) => {
+          console.error("Could not submit the leaderboard score.", error);
+          notifyRef.current(trRef.current("leaderboardSubmitError"), {
+            kind: "error",
+            icon: "⚠️",
+          });
         });
       } else if (!user && finalScore > 0 && deviceId && prog.displayName) {
         guestSubmitFn({
           data: {
             deviceId,
-            mode: finalMode,
+            mode: leaderboardMode,
             score: finalScore,
             skin: prog.equipped,
           },
-        }).catch(() => {
-          /* noop */
+        }).catch((error) => {
+          console.error("Could not submit the guest leaderboard score.", error);
+          notifyRef.current(trRef.current("leaderboardSubmitError"), {
+            kind: "error",
+            icon: "⚠️",
+          });
         });
       }
     },
@@ -1619,26 +1677,26 @@ export default function NeonRush() {
       const dx = towards.x - x,
         dy = towards.y - y;
       const len = Math.hypot(dx, dy) || 1;
-      const speed = rand(1.2, 2.4) * s.difficulty;
+      const speed = rand(1.4, 2.6) * s.difficulty;
       const surgeWave = s.mode === "surge" && isSurgeWave(s.t);
       const hazardChance = s.halloween
         ? 0.42
         : s.mode === "hardcore"
-          ? 0.55
+          ? 0.62
           : s.mode === "surge"
             ? surgeWave
-              ? 0.58
-              : 0.14
+              ? 0.5
+              : 0.2
             : s.mode === "treasure"
-              ? 0.12
+              ? 0.2
               : s.mode === "zen"
-                ? 0.14
+                ? 0.18
                 : s.mode === "blitz"
-                  ? 0.28
+                  ? 0.36
                   : 0.32;
       const isHazard = Math.random() < hazardChance;
       const isBonusOrb =
-        !s.duo && !isHazard && Math.random() < (s.mode === "treasure" ? 0.4 : 0.055);
+        !s.duo && !isHazard && Math.random() < (s.mode === "treasure" ? 0.34 : 0.055);
       const orbStyle = visualStyle("orb", s.orbStyle);
       const spikeStyle = visualStyle("spikes", s.spikeStyle);
       s.entities.push({
@@ -1646,7 +1704,7 @@ export default function NeonRush() {
         y,
         vx: (dx / len) * speed,
         vy: (dy / len) * speed,
-        r: isHazard ? rand(14, 26) : rand(7, 11),
+        r: isHazard ? rand(15, 28) : rand(7, 11),
         life: 0,
         maxLife: 0,
         kind: isHazard ? "hazard" : isBonusOrb ? "bonusOrb" : "orb",
@@ -1655,7 +1713,9 @@ export default function NeonRush() {
             ? "#b05cff"
             : spikeStyle.colors[0]!
           : isBonusOrb
-            ? "#ffcc4d"
+            ? s.mode === "treasure"
+              ? "#72f7ff"
+              : "#ffcc4d"
             : orbStyle.colors[0]!,
         angle: rand(0, Math.PI * 2),
         spin: rand(-0.05, 0.05),
@@ -1677,6 +1737,23 @@ export default function NeonRush() {
         angle: 0,
         spin: 0.03,
       });
+    };
+    const spawnVault = () => {
+      const margin = 70;
+      s.entities.push({
+        x: rand(margin, Math.max(margin + 1, s.w - margin)),
+        y: rand(margin, Math.max(margin + 1, s.h - margin)),
+        vx: 0,
+        vy: 0,
+        r: 25,
+        life: 0,
+        maxLife: 9_000,
+        kind: "vault",
+        color: "#72f7ff",
+        angle: 0,
+        spin: 0.018,
+      });
+      s.lastVaultSpawn = s.t;
     };
     const spawnPumpkin = () => {
       s.entities.push({
@@ -1921,16 +1998,16 @@ export default function NeonRush() {
         const surgeWave = s.mode === "surge" && isSurgeWave(s.t);
         s.difficulty =
           (s.mode === "hardcore"
-            ? 1.2 + Math.min(1.4, minutes * 0.6)
+            ? 1.5 + Math.min(1.8, minutes * 0.8)
             : s.mode === "zen"
-              ? 0.7 + Math.min(0.25, minutes * 0.3)
+              ? 0.82 + Math.min(0.45, minutes * 0.4)
               : s.mode === "surge"
-                ? (surgeWave ? 1.3 : 0.75) + Math.min(surgeWave ? 0.4 : 0.25, minutes * 0.2)
+                ? (surgeWave ? 1.3 : 0.9) + Math.min(surgeWave ? 0.55 : 0.3, minutes * 0.28)
                 : s.mode === "treasure"
-                  ? 0.82 + Math.min(0.35, minutes * 0.35)
+                  ? 1.02 + Math.min(0.65, minutes * 0.5)
                   : s.mode === "blitz"
-                    ? 1.05 + Math.min(0.65, minutes * 0.55)
-                    : 1 + Math.min(1.2, minutes * 0.45)) +
+                    ? 1.2 + Math.min(0.8, minutes * 0.7)
+                    : 1.2 + Math.min(1.6, minutes * 0.6)) +
           (s.halloween && s.t >= 60_000 ? 0.3 : s.halloween && s.t >= 30_000 ? 0.15 : 0);
         if (s.lo.slowStart && s.t < 15000) s.difficulty *= 0.75;
         if (s.duration > 0) {
@@ -1940,19 +2017,19 @@ export default function NeonRush() {
             gameOverNow();
           }
         }
-        const spawnBase = 780;
-        const spawnMin = 300;
+        const spawnBase = 700;
+        const spawnMin = 250;
         const spawnRate = Math.max(
           spawnMin,
           spawnBase -
-            s.t * 0.04 -
-            (surgeWave ? 100 : 0) -
-            (s.mode === "treasure" ? 40 : 0) -
+            s.t * 0.05 -
+            (surgeWave ? 150 : 0) -
+            (s.mode === "treasure" ? 70 : 0) -
             (s.halloween && s.t >= 60_000 ? 110 : s.halloween && s.t >= 30_000 ? 55 : 0),
         );
         if (s.t - s.lastSpawn > spawnRate) {
           spawn();
-          if (Math.random() < 0.15 * s.difficulty) spawn();
+          if (Math.random() < Math.min(0.4, 0.12 * s.difficulty)) spawn();
           s.lastSpawn = s.t;
         }
         const pumpkinInterval = s.t >= 60_000 ? 2200 : s.t >= 30_000 ? 2900 : 3800;
@@ -1990,11 +2067,18 @@ export default function NeonRush() {
         }
         // Hardcore aussi a droit aux power-ups (plus rares) : ils sont indispensables au feeling
         const powerEvery =
-          (s.mode === "hardcore" ? 14_000 : s.mode === "treasure" ? 9_000 : 8_500) *
+          (s.mode === "hardcore" ? 16_000 : s.mode === "treasure" ? 11_000 : 9_500) *
           (s.lo.powerHunter ? 0.7 : 1);
         if (s.t - s.lastPower > powerEvery) {
           spawnPower();
           s.lastPower = s.t;
+        }
+        if (
+          s.mode === "treasure" &&
+          !s.entities.some((entity) => entity.kind === "vault") &&
+          s.t - s.lastVaultSpawn >= 4_000
+        ) {
+          spawnVault();
         }
 
         // Tight tracking for touch/mouse (input already snaps on touch); smooth for keyboard
@@ -2004,6 +2088,42 @@ export default function NeonRush() {
         s.player.y += (s.player.ty - s.player.y) * follow;
         s.player.x = Math.max(s.player.r, Math.min(s.w - s.player.r, s.player.x));
         s.player.y = Math.max(s.player.r, Math.min(s.h - s.player.r, s.player.y));
+        if (s.mode === "surge" && isSurgeWave(s.t) && s.w > 0 && s.h > 0) {
+          const cycle = Math.floor(s.t / RIFT_PERIOD_MS);
+          const phase = (s.t % RIFT_PERIOD_MS) - RIFT_WARNING_START_MS;
+          const angle = cycle * 1.1 + phase * 0.00042;
+          const dx = s.player.x - s.w / 2;
+          const dy = s.player.y - s.h / 2;
+          const distanceToRift = Math.abs(dx * Math.sin(angle) - dy * Math.cos(angle));
+          if (distanceToRift < 14 + s.player.r && s.invuln <= 0) {
+            if (s.powers.shield > 0) {
+              s.powers.shield = 0;
+              setPowers({ ...s.powers });
+              s.invuln = 600;
+              wave(s.player.x, s.player.y, POWER_MAP.shield.color, 190, 4, 420);
+              notifyRef.current(trRef.current("riftBlocked"), {
+                kind: "warn",
+                icon: "⛨",
+                ttl: 1400,
+              });
+            } else if (s.secondCharges > 0) {
+              s.secondCharges--;
+              setSecondCharges(s.secondCharges);
+              s.invuln = 1600;
+              s.powers.shield = Math.max(s.powers.shield, 900);
+              setPowers({ ...s.powers });
+              wave(s.player.x, s.player.y, POWER_MAP.second.color, 260, 5, 600);
+              notifyRef.current(trRef.current("riftBlocked"), {
+                kind: "epic",
+                icon: "✚",
+                ttl: 1400,
+              });
+            } else {
+              burst(s.player.x, s.player.y, "#ff2e6a", 60, 2);
+              gameOverNow();
+            }
+          }
+        }
         s.player.trail.push({ x: s.player.x, y: s.player.y });
         const trailLen = s.skinFx.trailLen + (boosting ? 10 : 0);
         while (s.player.trail.length > trailLen) s.player.trail.shift();
@@ -2060,7 +2180,7 @@ export default function NeonRush() {
 
         for (let i = s.entities.length - 1; i >= 0; i--) {
           const e = s.entities[i];
-          if (e.kind === "power" || e.kind === "pumpkin") {
+          if (e.kind === "power" || e.kind === "pumpkin" || e.kind === "vault") {
             e.life += dt;
             e.angle = (e.angle || 0) + (e.spin || 0);
             if (e.life > e.maxLife) {
@@ -2103,7 +2223,32 @@ export default function NeonRush() {
           const rr = (e.r * shrink + s.player.r) ** 2;
           const distanceToPlayer = dist2(e, s.player);
           if (distanceToPlayer < rr) {
-            if (e.kind === "pumpkin") {
+            if (e.kind === "vault" && s.mode === "treasure") {
+              if (s.carriedRelics > 0) {
+                const deposited = s.carriedRelics;
+                const deliveryScore = deposited * 220 + Math.min(s.deliveredRelics, 40) * 10;
+                s.score += deliveryScore;
+                s.runBonusCoins += deposited * 30;
+                s.deliveredRelics += deposited;
+                s.carriedRelics = 0;
+                setRelicsCarried(0);
+                setRelicsDelivered(s.deliveredRelics);
+                setScore(Math.floor(s.score));
+                popup(e.x, e.y, `+${deliveryScore} · +${deposited * 30} 🪙`, "#72f7ff", 17);
+                notifyRef.current(`${trRef.current("relicsBanked")}: ${deposited}`, {
+                  kind: "success",
+                  icon: "💠",
+                  ttl: 1800,
+                });
+                wave(e.x, e.y, "#72f7ff", 210, 4, 500);
+                burst(e.x, e.y, "#72f7ff", 32, 1.5);
+                audioRef.current.record();
+              } else {
+                popup(e.x, e.y, trRef.current("noRelicsToBank"), "#c5d0e4", 12);
+              }
+              s.entities.splice(i, 1);
+              s.lastVaultSpawn = s.t;
+            } else if (e.kind === "pumpkin") {
               s.runPumpkins++;
               s.score += 30;
               setHalloweenRunPumpkins(s.runPumpkins);
@@ -2139,17 +2284,27 @@ export default function NeonRush() {
                 (s.lo.scoreBoost ? 1.15 : 1) *
                 (lucky ? 2 : 1);
               const isBonusOrb = e.kind === "bonusOrb";
-              const treasureBonus = isBonusOrb && s.mode === "treasure" ? 1.5 : 1;
-              const gain = Math.round(
-                (10 + s.combo * 2 + (isBonusOrb ? 100 : 0)) * mul * treasureBonus,
-              );
+              const isRelic = isBonusOrb && s.mode === "treasure";
+              const gain = isRelic
+                ? Math.round((10 + s.combo * 2) * mul * 0.5)
+                : Math.round((10 + s.combo * 2 + (isBonusOrb ? 100 : 0)) * mul);
               if (isBonusOrb) {
-                s.runBonusCoins += s.mode === "treasure" ? 35 : 25;
-                notifyRef.current(trRef.current("mechanicGoldOrb"), {
-                  kind: "epic",
-                  icon: "🌟",
-                  ttl: 1800,
-                });
+                if (isRelic) {
+                  s.carriedRelics = Math.min(6, s.carriedRelics + 1);
+                  setRelicsCarried(s.carriedRelics);
+                  notifyRef.current(`${trRef.current("relicCollected")} · ${s.carriedRelics}/6`, {
+                    kind: "epic",
+                    icon: "💠",
+                    ttl: 1400,
+                  });
+                } else {
+                  s.runBonusCoins += 25;
+                  notifyRef.current(trRef.current("mechanicGoldOrb"), {
+                    kind: "epic",
+                    icon: "🌟",
+                    ttl: 1800,
+                  });
+                }
               }
               s.score += gain;
               setScore(Math.floor(s.score));
@@ -2159,8 +2314,14 @@ export default function NeonRush() {
               popup(
                 e.x,
                 e.y,
-                isBonusOrb ? `+${gain} · +25 🪙` : `+${gain}`,
-                isBonusOrb ? "#ffcc4d" : s.powers.x2 > 0 ? POWER_MAP.x2.color : s.skinColors[1],
+                isRelic ? `💠 ${s.carriedRelics}/6` : isBonusOrb ? `+${gain} · +25 🪙` : `+${gain}`,
+                isRelic
+                  ? "#72f7ff"
+                  : isBonusOrb
+                    ? "#ffcc4d"
+                    : s.powers.x2 > 0
+                      ? POWER_MAP.x2.color
+                      : s.skinColors[1],
                 s.powers.x2 > 0 ? 16 : 13,
               );
               if (s.combo > 0 && s.combo % 10 === 0) {
@@ -2421,11 +2582,71 @@ export default function NeonRush() {
         }
         ctx.restore();
       }
+      if (s.running && s.mode === "surge" && (isSurgeTelegraph(s.t) || isSurgeWave(s.t))) {
+        const cycle = Math.floor(s.t / RIFT_PERIOD_MS);
+        const elapsed = s.t % RIFT_PERIOD_MS;
+        const active = isSurgeWave(s.t);
+        const phase = (elapsed - RIFT_WARNING_START_MS) * 0.00042;
+        const angle = cycle * 1.1 + phase;
+        const length = Math.hypot(s.w, s.h);
+        ctx.save();
+        ctx.translate(s.w / 2, s.h / 2);
+        ctx.rotate(angle);
+        ctx.beginPath();
+        ctx.moveTo(-length, 0);
+        ctx.lineTo(length, 0);
+        ctx.setLineDash(active ? [] : [14, 12]);
+        ctx.strokeStyle = active ? "#ff285f" : "#fff17a";
+        ctx.lineWidth = active ? 18 : 3;
+        ctx.globalAlpha = active ? 0.85 : 0.6 + Math.sin(s.t / 100) * 0.2;
+        ctx.shadowColor = active ? "#ff285f" : "#fff17a";
+        ctx.shadowBlur = active ? 30 : 12;
+        ctx.stroke();
+        if (active) {
+          ctx.strokeStyle = "#fff2f5";
+          ctx.lineWidth = 3;
+          ctx.globalAlpha = 0.9;
+          ctx.stroke();
+        }
+        ctx.restore();
+      }
       for (const e of s.entities) {
         ctx.save();
         ctx.translate(e.x, e.y);
         ctx.rotate(e.angle || 0);
-        if (e.kind === "orb" || e.kind === "bonusOrb") {
+        if (e.kind === "vault") {
+          const pulse = 1 + Math.sin(s.t / 170) * 0.12;
+          ctx.shadowColor = "#72f7ff";
+          ctx.shadowBlur = 26;
+          ctx.strokeStyle = "#72f7ff";
+          ctx.lineWidth = 2.5;
+          ctx.beginPath();
+          ctx.arc(0, 0, e.r * 1.25 * pulse, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.strokeStyle = e.life > e.maxLife * 0.72 ? "#ffcc4d" : "#d8fdff";
+          ctx.lineWidth = 3.5;
+          ctx.beginPath();
+          ctx.arc(
+            0,
+            0,
+            e.r * 1.85,
+            -Math.PI / 2,
+            -Math.PI / 2 + Math.PI * 2 * (1 - e.life / e.maxLife),
+          );
+          ctx.stroke();
+          ctx.rotate(-(e.angle || 0) * 2);
+          ctx.setLineDash([5, 4]);
+          ctx.beginPath();
+          ctx.arc(0, 0, e.r * 1.65, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.setLineDash([]);
+          ctx.fillStyle = "#d8fdff";
+          tracePolygon(ctx, 0, 0, e.r * 0.68, 4, Math.PI / 4);
+          ctx.fill();
+          ctx.fillStyle = "#138ba0";
+          tracePolygon(ctx, 0, 0, e.r * 0.35, 4, Math.PI / 4);
+          ctx.fill();
+        } else if (e.kind === "orb" || e.kind === "bonusOrb") {
           const orbColor = e.color;
           const g = ctx.createRadialGradient(0, 0, 0, 0, 0, e.r * 3);
           g.addColorStop(0, colorWithAlpha(orbColor, 1));
@@ -2440,10 +2661,20 @@ export default function NeonRush() {
           ctx.arc(0, 0, e.r * 0.7, 0, Math.PI * 2);
           ctx.fill();
           if (e.kind === "bonusOrb") {
-            ctx.strokeStyle = "#fff5bd";
-            ctx.lineWidth = 2;
-            traceStar(ctx, 0, 0, e.r * 1.25, e.r * 0.52, 5, s.t / 260);
-            ctx.stroke();
+            if (s.mode === "treasure") {
+              ctx.strokeStyle = "#d8fdff";
+              ctx.lineWidth = 2;
+              tracePolygon(ctx, 0, 0, e.r * 1.3, 4, s.t / 500);
+              ctx.stroke();
+              ctx.fillStyle = "#d8fdff";
+              tracePolygon(ctx, 0, 0, e.r * 0.34, 4, -s.t / 500);
+              ctx.fill();
+            } else {
+              ctx.strokeStyle = "#fff5bd";
+              ctx.lineWidth = 2;
+              traceStar(ctx, 0, 0, e.r * 1.25, e.r * 0.52, 5, s.t / 260);
+              ctx.stroke();
+            }
           }
         } else if (e.kind === "pumpkin") {
           const glow = 1 + Math.sin(s.t / 130 + e.x) * 0.12;
@@ -3077,8 +3308,9 @@ export default function NeonRush() {
     let cancel = false;
     const load = async () => {
       setLbLoading(true);
+      setLbError(false);
       try {
-        const [rows, mine] = await Promise.all([
+        const [rowsResult, mineResult] = await Promise.allSettled([
           fetchLbFn({ data: { mode: lbMode } }),
           user
             ? fetchRankFn({ data: { mode: lbMode } })
@@ -3087,11 +3319,25 @@ export default function NeonRush() {
               : Promise.resolve(null),
         ]);
         if (!cancel) {
-          setLbRows(rows as LbRow[]);
-          setMyRank(mine as { score: number; rank: number | null; total: number } | null);
+          if (rowsResult.status === "fulfilled") {
+            setLbRows(rowsResult.value as LbRow[]);
+          } else {
+            console.error("Could not load the leaderboard scores.", rowsResult.reason);
+            setLbError(true);
+          }
+          if (mineResult.status === "fulfilled") {
+            setMyRank(
+              mineResult.value as { score: number; rank: number | null; total: number } | null,
+            );
+          } else {
+            console.error("Could not load the personal leaderboard rank.", mineResult.reason);
+            setMyRank(null);
+            setLbError(true);
+          }
         }
       } catch (error) {
-        console.error("Could not load the personal leaderboard rank.", error);
+        console.error("Could not load the leaderboard.", error);
+        if (!cancel) setLbError(true);
       } finally {
         if (!cancel) setLbLoading(false);
       }
@@ -3322,6 +3568,22 @@ export default function NeonRush() {
                 {tr("time")} : <span className="text-glow-magenta">{timeLeft}s</span>
               </div>
             )}
+          {running && mode === "surge" && (
+            <div
+              className={`mt-1 text-[10px] font-black uppercase tracking-[0.12em] ${isSurgeWave(stateRef.current.t) ? "text-red-300 animate-pulse" : "text-glow-yellow"}`}
+            >
+              {isSurgeWave(stateRef.current.t)
+                ? `⚠ ${tr("riftActive")}`
+                : isSurgeTelegraph(stateRef.current.t)
+                  ? `⌁ ${tr("riftWarning")}`
+                  : ""}
+            </div>
+          )}
+          {running && mode === "treasure" && (
+            <div className="mt-1 text-[10px] font-black uppercase tracking-[0.12em] text-glow-cyan">
+              💠 {relicsCarried}/6 · {tr("relicsBanked")}: {relicsDelivered}
+            </div>
+          )}
           {running && halloweenRun && (
             <>
               <div className="mt-1 text-[10px] font-bold uppercase tracking-[0.12em] text-[#ffb347]">
@@ -4245,13 +4507,28 @@ export default function NeonRush() {
                       {tr("changeNickname")}
                       <input
                         value={profileNameDraft}
-                        onChange={(event) => setProfileNameDraft(event.target.value)}
+                        onChange={(event) => {
+                          setProfileNameDraft(event.target.value);
+                          if (!/smile/i.test(event.target.value)) setProfileNamePassword("");
+                        }}
                         minLength={3}
                         maxLength={20}
                         autoComplete="nickname"
                         className="mt-1 w-full rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm text-foreground outline-none focus:border-[color:var(--neon-cyan)]"
                       />
                     </label>
+                    {/smile/i.test(profileNameDraft) && (
+                      <label className="col-span-2 text-[10px] uppercase tracking-widest text-muted-foreground">
+                        {tr("smilePasswordPrompt")}
+                        <input
+                          type="password"
+                          value={profileNamePassword}
+                          onChange={(event) => setProfileNamePassword(event.target.value)}
+                          autoComplete="off"
+                          className="mt-1 w-full rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm text-foreground outline-none focus:border-[color:var(--neon-cyan)]"
+                        />
+                      </label>
+                    )}
                     <button
                       onClick={() => void saveProfileNickname()}
                       disabled={
@@ -4342,13 +4619,16 @@ export default function NeonRush() {
             {panel === "leaderboard" && (
               <div>
                 <div className="mb-3 grid grid-cols-3 gap-1 text-[10px] uppercase tracking-[0.2em]">
-                  {MODES.map((m) => (
+                  {[
+                    ...MODES.map((m) => ({ id: m.id, label: tr(m.nameKey) })),
+                    { id: "halloween" as const, label: tr("halloweenMode") },
+                  ].map((m) => (
                     <button
                       key={m.id}
                       onClick={() => setLbMode(m.id)}
                       className={`rounded-lg py-2 font-bold ${lbMode === m.id ? "bg-[color:var(--neon-cyan)]/20 text-glow-cyan" : "bg-black/30 text-muted-foreground"}`}
                     >
-                      {tr(m.nameKey)}
+                      {m.label}
                     </button>
                   ))}
                 </div>
@@ -4371,6 +4651,11 @@ export default function NeonRush() {
                   <span className="text-glow-yellow">● {tr("liveUpdates")}</span>
                 </div>
                 <div className="space-y-1 max-h-[45vh] overflow-y-auto">
+                  {lbError && (
+                    <div role="alert" className="py-2 text-center text-xs text-destructive">
+                      {tr("leaderboardLoadError")}
+                    </div>
+                  )}
                   {lbLoading && lbRows.length === 0 && (
                     <div className="text-center text-xs text-muted-foreground py-4">…</div>
                   )}
@@ -4379,28 +4664,42 @@ export default function NeonRush() {
                       ? user.id === row.user_id
                       : row.guest && row.display_name === prog.displayName;
                     return (
-                      <button
-                        type="button"
+                      <div
                         key={`${lbMode}-${idx}-${row.guest ? "g" : "a"}-${row.user_id ?? row.display_name}`}
-                        onClick={() => row.display_name && setPublicProfileName(row.display_name)}
-                        disabled={!row.display_name}
-                        title={tr("openPlayerProfile")}
-                        className={`flex w-full items-center justify-between rounded-lg border px-3 py-2 text-left ${isMe ? "border-[color:var(--neon-cyan)] bg-[color:var(--neon-cyan)]/10" : "border-border/40 bg-black/20"}`}
+                        className={`flex items-center gap-2 rounded-lg border px-3 py-2 ${isMe ? "border-[color:var(--neon-cyan)] bg-[color:var(--neon-cyan)]/10" : "border-border/40 bg-black/20"}`}
                       >
-                        <div className="flex items-center gap-2 min-w-0">
-                          <span
-                            className={`font-display font-black text-sm w-8 ${idx === 0 ? "text-glow-yellow" : idx < 3 ? "text-glow-magenta" : "text-muted-foreground"}`}
-                          >
-                            #{idx + 1}
-                          </span>
-                          <span className="text-xs font-bold uppercase tracking-widest truncate">
-                            {row.display_name || "Anon"}
-                          </span>
-                        </div>
+                        <span
+                          className={`font-display font-black text-sm w-8 shrink-0 ${idx === 0 ? "text-glow-yellow" : idx < 3 ? "text-glow-magenta" : "text-muted-foreground"}`}
+                        >
+                          #{idx + 1}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => row.display_name && setPublicProfileName(row.display_name)}
+                          disabled={!row.display_name}
+                          aria-label={`${tr("openPlayerProfile")}: ${row.display_name || "Anon"}`}
+                          title={tr("openPlayerProfile")}
+                          className="min-w-0 flex-1 truncate text-left text-xs font-bold uppercase tracking-widest hover:text-glow-cyan focus-visible:outline focus-visible:outline-2 focus-visible:outline-[color:var(--neon-cyan)] disabled:opacity-60"
+                        >
+                          {row.display_name || "Anon"}
+                        </button>
                         <span className="font-display font-black text-glow-cyan tabular-nums">
                           {row.score}
                         </span>
-                      </button>
+                        <button
+                          type="button"
+                          onClick={() => row.display_name && setPublicProfileName(row.display_name)}
+                          disabled={!row.display_name}
+                          aria-label={`${tr("openPlayerProfile")}: ${row.display_name || "Anon"}`}
+                          title={tr("openPlayerProfile")}
+                          className="flex h-8 shrink-0 items-center gap-1 rounded-md border border-[color:var(--neon-cyan)]/40 px-2 text-glow-cyan transition hover:bg-[color:var(--neon-cyan)]/15 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[color:var(--neon-cyan)] disabled:opacity-40"
+                        >
+                          <UserRound size={14} aria-hidden="true" />
+                          <span className="whitespace-nowrap text-[9px] font-bold uppercase">
+                            {tr("profile")}
+                          </span>
+                        </button>
+                      </div>
                     );
                   })}
                   {!lbLoading && lbRows.length === 0 && (
@@ -4408,7 +4707,12 @@ export default function NeonRush() {
                   )}
                 </div>
                 {publicProfileName && (
-                  <section className="mt-3 rounded-xl border border-[color:var(--neon-magenta)]/40 bg-black/40 p-3">
+                  <section
+                    ref={publicProfileRef}
+                    role="region"
+                    aria-label={tr("playerProfile")}
+                    className="mt-3 max-h-[60vh] overflow-y-auto rounded-xl border border-[color:var(--neon-magenta)]/40 bg-black/40 p-3"
+                  >
                     <div className="mb-2 flex items-center justify-between">
                       <h3 className="font-display text-sm font-black text-glow-magenta">
                         {publicProfileName}
@@ -4496,9 +4800,15 @@ export default function NeonRush() {
                           </p>
                         )}
                         <div className="mt-2 space-y-1">
-                          {MODES.map((item) => (
+                          {[
+                            ...MODES.map((item) => ({
+                              id: item.id,
+                              label: tr(item.nameKey),
+                            })),
+                            { id: "halloween", label: tr("halloweenMode") },
+                          ].map((item) => (
                             <div key={item.id} className="flex justify-between text-xs">
-                              <span>{tr(item.nameKey)}</span>
+                              <span>{item.label}</span>
                               <strong className="text-glow-yellow">
                                 {(publicProfile.best_by_mode[item.id] ?? 0).toLocaleString()}
                               </strong>

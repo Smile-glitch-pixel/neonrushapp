@@ -1,5 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
+import { containsSmile, verifySmileNamePassword } from "@/lib/smile-name.server";
 
 /** Client public serveur (invités non connectés). */
 export const publicClient = async () => {
@@ -24,9 +25,18 @@ const DeviceSchema = z.string().min(16).max(64);
 /** Réserve un pseudo pour cet appareil (unique parmi comptes ET invités). */
 export const guestClaimName = createServerFn({ method: "POST" })
   .inputValidator((i: unknown) =>
-    z.object({ deviceId: DeviceSchema, name: z.string().min(1).max(40) }).parse(i),
+    z
+      .object({
+        deviceId: DeviceSchema,
+        name: z.string().min(1).max(40),
+        smilePassword: z.string().max(128).optional(),
+      })
+      .parse(i),
   )
   .handler(async ({ data }) => {
+    if (containsSmile(data.name) && !verifySmileNamePassword(data.name, data.smilePassword ?? "")) {
+      return { ok: false as const, reason: "PASSWORD" as const };
+    }
     const sb = await publicClient();
     const { data: res, error } = await sb.rpc("guest_claim_name", {
       _device: data.deviceId,
@@ -47,7 +57,7 @@ export const guestSubmitScore = createServerFn({ method: "POST" })
     z
       .object({
         deviceId: DeviceSchema,
-        mode: z.enum(["classic", "hardcore", "zen", "blitz", "surge", "treasure"]),
+        mode: z.enum(["classic", "hardcore", "zen", "blitz", "surge", "treasure", "halloween"]),
         score: z.number().int().min(0).max(5_000_000),
         skin: z.string().max(24).nullable().optional(),
       })
@@ -62,7 +72,8 @@ export const guestSubmitScore = createServerFn({ method: "POST" })
       _skin: data.skin ?? null,
     });
     if (error) throw error;
-    return { ok: Boolean(res) };
+    if (!res) throw new Error("Supabase rejected the guest leaderboard score.");
+    return { ok: true };
   });
 
 /** Meilleurs scores de cet appareil invité, par mode. */
@@ -73,7 +84,8 @@ export const guestBests = createServerFn({ method: "POST" })
     const { data: rows, error } = await sb
       .from("guest_scores")
       .select("mode, score")
-      .eq("device_id", data.deviceId);
+      .eq("device_id", data.deviceId)
+      .not("display_name", "ilike", "%smile%");
     if (error) throw error;
     const out: Record<string, number> = {};
     for (const r of rows ?? [])
@@ -87,7 +99,7 @@ export const guestMyRank = createServerFn({ method: "POST" })
     z
       .object({
         deviceId: DeviceSchema,
-        mode: z.enum(["classic", "hardcore", "zen", "blitz", "surge", "treasure"]),
+        mode: z.enum(["classic", "hardcore", "zen", "blitz", "surge", "treasure", "halloween"]),
       })
       .parse(i),
   )
@@ -99,12 +111,18 @@ export const guestMyRank = createServerFn({ method: "POST" })
         .select("score")
         .eq("device_id", data.deviceId)
         .eq("mode", data.mode)
+        .not("display_name", "ilike", "%smile%")
         .maybeSingle(),
       sb
         .from("leaderboard_scores")
         .select("*", { count: "exact", head: true })
-        .eq("mode", data.mode),
-      sb.from("guest_scores").select("*", { count: "exact", head: true }).eq("mode", data.mode),
+        .eq("mode", data.mode)
+        .not("display_name", "ilike", "%smile%"),
+      sb
+        .from("guest_scores")
+        .select("*", { count: "exact", head: true })
+        .eq("mode", data.mode)
+        .not("display_name", "ilike", "%smile%"),
     ]);
     if (mine.error) throw mine.error;
     if (accountTotal.error) throw accountTotal.error;
@@ -118,11 +136,13 @@ export const guestMyRank = createServerFn({ method: "POST" })
         .from("leaderboard_scores")
         .select("*", { count: "exact", head: true })
         .eq("mode", data.mode)
+        .not("display_name", "ilike", "%smile%")
         .gt("score", mine.data.score),
       sb
         .from("guest_scores")
         .select("*", { count: "exact", head: true })
         .eq("mode", data.mode)
+        .not("display_name", "ilike", "%smile%")
         .gt("score", mine.data.score),
     ]);
     if (betterAccounts.error) throw betterAccounts.error;

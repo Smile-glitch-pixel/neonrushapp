@@ -2,7 +2,8 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
-const ModeEnum = z.enum(["classic", "hardcore", "zen", "blitz", "surge", "treasure"]);
+const ModeEnum = z.enum(["classic", "hardcore", "zen", "blitz", "surge", "treasure", "halloween"]);
+export type LeaderboardMode = z.infer<typeof ModeEnum>;
 
 /** Envoie le meilleur score du joueur (garde uniquement le meilleur par mode). */
 export const submitScore = createServerFn({ method: "POST" })
@@ -60,12 +61,14 @@ export const fetchLeaderboard = createServerFn({ method: "GET" })
         .from("leaderboard_scores")
         .select("user_id, mode, score, display_name, equipped_skin, updated_at")
         .eq("mode", data.mode)
+        .not("display_name", "ilike", "%smile%")
         .order("score", { ascending: false })
         .limit(100),
       sb
         .from("guest_scores")
         .select("mode, score, display_name, equipped_skin, updated_at")
         .eq("mode", data.mode)
+        .not("display_name", "ilike", "%smile%")
         .order("score", { ascending: false })
         .limit(100),
     ]);
@@ -100,6 +103,7 @@ export const fetchMyRank = createServerFn({ method: "GET" })
       .select("score")
       .eq("user_id", context.userId)
       .eq("mode", data.mode)
+      .not("display_name", "ilike", "%smile%")
       .maybeSingle();
     if (error) throw error;
 
@@ -107,11 +111,13 @@ export const fetchMyRank = createServerFn({ method: "GET" })
       context.supabase
         .from("leaderboard_scores")
         .select("*", { count: "exact", head: true })
-        .eq("mode", data.mode),
+        .eq("mode", data.mode)
+        .not("display_name", "ilike", "%smile%"),
       context.supabase
         .from("guest_scores")
         .select("*", { count: "exact", head: true })
-        .eq("mode", data.mode),
+        .eq("mode", data.mode)
+        .not("display_name", "ilike", "%smile%"),
     ]);
     if (accountTotal.error) throw accountTotal.error;
     if (guestTotal.error) throw guestTotal.error;
@@ -126,11 +132,13 @@ export const fetchMyRank = createServerFn({ method: "GET" })
         .from("leaderboard_scores")
         .select("*", { count: "exact", head: true })
         .eq("mode", data.mode)
+        .not("display_name", "ilike", "%smile%")
         .gt("score", mine.score),
       context.supabase
         .from("guest_scores")
         .select("*", { count: "exact", head: true })
         .eq("mode", data.mode)
+        .not("display_name", "ilike", "%smile%")
         .gt("score", mine.score),
     ]);
     if (betterAccounts.error) throw betterAccounts.error;
@@ -150,7 +158,8 @@ export const fetchMyBests = createServerFn({ method: "GET" })
     const { data, error } = await context.supabase
       .from("leaderboard_scores")
       .select("mode, score")
-      .eq("user_id", context.userId);
+      .eq("user_id", context.userId)
+      .not("display_name", "ilike", "%smile%");
     if (error) throw error;
     const out: Record<string, number> = {};
     for (const r of data ?? []) out[r.mode] = Math.max(out[r.mode] ?? 0, r.score ?? 0);

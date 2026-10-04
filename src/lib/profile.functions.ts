@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { publicClient } from "@/lib/guest.functions";
+import { containsSmile, verifySmileNamePassword } from "@/lib/smile-name.server";
 
 export type PublicPlayerProfile = {
   display_name: string;
@@ -20,7 +21,7 @@ export const fetchPublicProfile = createServerFn({ method: "GET" })
   .inputValidator((input: unknown) => z.object({ name: z.string().min(3).max(20) }).parse(input))
   .handler(async ({ data }) => {
     const name = data.name.trim();
-    if (!NAME_RE.test(name)) return null;
+    if (!NAME_RE.test(name) || containsSmile(name)) return null;
     const sb = await publicClient();
     const { data: profile, error } = await sb.rpc("public_player_profile", { _name: name });
     if (error) throw error;
@@ -29,6 +30,14 @@ export const fetchPublicProfile = createServerFn({ method: "GET" })
 
 /** Pseudo : 3-20 caractères, lettres/chiffres/._- */
 export const NAME_RE = /^[A-Za-z0-9._-]{3,20}$/;
+
+export const verifySmileSignupPassword = createServerFn({ method: "POST" })
+  .inputValidator((input: unknown) =>
+    z.object({ name: z.string().min(1).max(40), password: z.string().max(128) }).parse(input),
+  )
+  .handler(async ({ data }) => ({
+    ok: verifySmileNamePassword(data.name.trim(), data.password),
+  }));
 
 /** Pseudo actuel du joueur connecté (null s'il n'en a pas encore). */
 export const getMyProfile = createServerFn({ method: "GET" })
@@ -60,10 +69,20 @@ export const checkDisplayName = createServerFn({ method: "GET" })
 /** Enregistre le pseudo (unique) et le propage au classement. */
 export const setDisplayName = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input: unknown) => z.object({ name: z.string().min(1).max(40) }).parse(input))
+  .inputValidator((input: unknown) =>
+    z
+      .object({
+        name: z.string().min(1).max(40),
+        smilePassword: z.string().max(128).optional(),
+      })
+      .parse(input),
+  )
   .handler(async ({ data, context }) => {
     const name = data.name.trim();
     if (!NAME_RE.test(name)) return { ok: false as const, reason: "INVALID" as const };
+    if (containsSmile(name) && !verifySmileNamePassword(name, data.smilePassword ?? "")) {
+      return { ok: false as const, reason: "PASSWORD" as const };
+    }
 
     const { data: available, error: availErr } = await context.supabase.rpc(
       "display_name_available",
