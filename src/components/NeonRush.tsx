@@ -1560,15 +1560,14 @@ export default function NeonRush() {
     (finalScore: number, finalMode: GameMode, finalCombo: number) => {
       const mult = REWARD_MULT[finalMode] ?? 1;
       const run = stateRef.current;
+      const leaderboardMode: LeaderboardMode = run.halloween ? "halloween" : finalMode;
       const earnedCoins = Math.floor((finalScore / 10) * mult) + run.runBonusCoins;
       const earnedXP = Math.floor((finalScore / 6) * mult);
       setProg((p) => {
-        const bestByMode = run.halloween
-          ? p.bestByMode
-          : {
-              ...p.bestByMode,
-              [finalMode]: Math.max(p.bestByMode[finalMode] || 0, finalScore),
-            };
+        const bestByMode = {
+          ...p.bestByMode,
+          [leaderboardMode]: Math.max(p.bestByMode[leaderboardMode] || 0, finalScore),
+        };
         const st = stateRef.current;
         return {
           ...p,
@@ -1612,7 +1611,6 @@ export default function NeonRush() {
       );
 
       // Classement mondial : comptes ET invités (pseudo obligatoire dans les deux cas)
-      const leaderboardMode: LeaderboardMode = run.halloween ? "halloween" : finalMode;
       if (user && finalScore > 0) {
         submitScoreFn({
           data: {
