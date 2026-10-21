@@ -57,6 +57,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { pullPlayerState, pushPlayerState } from "@/lib/player-sync.functions";
 import { useDuo } from "@/hooks/useDuo";
 import DuoLobby from "@/components/DuoLobby";
+import DuoPartnerCard from "@/components/DuoPartnerCard";
 import { mergeProg, progToRemote } from "@/lib/prog-sync";
 import {
   submitScore,
@@ -3604,21 +3605,7 @@ export default function NeonRush() {
                 🤝 {tr("duoTeamScore")} :{" "}
                 <span className="text-glow-yellow tabular-nums">{duoTeamScore}</span>
               </div>
-              <div className="mt-1 text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
-                {tr("duoPartner")} :{" "}
-                <span className="text-glow-magenta">
-                  {tr(
-                    duo.partner
-                      ? ({
-                          alive: "duoAlive",
-                          down: "duoDown",
-                          dead: "duoDead",
-                          disconnected: "duoDisconnected",
-                        }[duo.partner.state] ?? "duoAlive")
-                      : "duoWaiting",
-                  )}
-                </span>
-              </div>
+              <DuoPartnerCard partner={duo.partner} myScore={score} tr={tr} />
             </>
           )}
         </div>
