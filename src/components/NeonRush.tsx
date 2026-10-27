@@ -58,6 +58,7 @@ import { pullPlayerState, pushPlayerState } from "@/lib/player-sync.functions";
 import { useDuo } from "@/hooks/useDuo";
 import DuoLobby from "@/components/DuoLobby";
 import DuoPartnerCard from "@/components/DuoPartnerCard";
+import { duoMsUntilGo } from "@/lib/duo-timing";
 import { mergeProg, progToRemote } from "@/lib/prog-sync";
 import {
   submitScore,
@@ -1275,16 +1276,26 @@ export default function NeonRush() {
   const duoActive = !!duo.room && duo.room.status === "playing";
   const duoTeamScore = Math.max(duo.teamScore, score + (duo.partner?.score ?? 0));
 
-  // Les deux alliés démarrent ensemble (chrono serveur partagé = ends_at)
+  // Les deux alliés partent ENSEMBLE : compte à rebours commun (voir lib/duo-timing.ts),
+  // puis chrono serveur partagé = ends_at.
   useEffect(() => {
     const r = duo.room;
     if (!r || r.status !== "playing" || running) return;
     if (duoDoneRef.current === r.id) return;
-    const left = r.ends_at ? new Date(r.ends_at).getTime() - Date.now() : r.duration_s * 1000;
-    if (left <= 800) return;
-    duo.beginRun();
-    setDuoDownMs(0);
-    start("classic", { duo: true, durationMs: left });
+    const launch = () => {
+      const left = r.ends_at ? new Date(r.ends_at).getTime() - Date.now() : r.duration_s * 1000;
+      if (left <= 800) return;
+      duo.beginRun();
+      setDuoDownMs(0);
+      start("classic", { duo: true, durationMs: left });
+    };
+    const wait = duoMsUntilGo(r.started_at);
+    if (wait <= 0) {
+      launch();
+      return;
+    }
+    const id = window.setTimeout(launch, wait);
+    return () => window.clearTimeout(id);
   }, [duo.room, duo.beginRun, running, start]);
 
   // Contribution au score d'équipe (validée serveur, throttlée — aucun impact FPS)
