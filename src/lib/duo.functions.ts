@@ -459,18 +459,19 @@ export const duoLeave = createServerFn({ method: "POST" })
       return { ok: true, abandoned: true };
     }
 
-    await context.supabase
-      .from("room_players")
-      .delete()
-      .eq("room_id", room.id)
-      .eq("user_id", context.userId);
+    // Appel RPC atomique (promotion hôte en lobby, suppression si seul)
+    const { data: result, error } = await context.supabase.rpc("duo_leave_promote", {
+      _room: room.id,
+      _leaving_user: context.userId,
+    });
+    if (error) throw error;
 
-    if (room.host_id === context.userId) {
-      await context.supabase.from("rooms").delete().eq("id", room.id);
-    } else {
-      await context.supabase.from("rooms").update({ status: "waiting" }).eq("id", room.id);
-    }
-    return { ok: true };
+    const { promoted, room_deleted } = result as {
+      promoted: boolean;
+      room_deleted: boolean;
+    };
+
+    return { ok: true, promoted, room_deleted };
   });
 
 type SupabaseLike = Pick<SupabaseClient<Database>, "from">;
