@@ -135,6 +135,11 @@ export const QualityPresets = {
 
 /** Détecte le preset recommandé basé sur le hardware */
 export function detectQualityPreset(): keyof typeof QualityPresets {
+  // SSR guard: retourne un preset par défaut côté serveur
+  if (typeof window === 'undefined' || typeof document === 'undefined' || typeof navigator === 'undefined') {
+    return 'medium';
+  }
+
   // Vérifie les capacités GPU/CPU
   const canvas = document.createElement('canvas');
   const gl = (canvas.getContext('webgl') || canvas.getContext('experimental-webgl')) as WebGLRenderingContext | null;
