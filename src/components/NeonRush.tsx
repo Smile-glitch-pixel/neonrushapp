@@ -55,6 +55,7 @@ import {
 } from "@/lib/neon-progression";
 import { supabase } from "@/integrations/supabase/client";
 import { pullPlayerState, pushPlayerState } from "@/lib/player-sync.functions";
+import { createBackground, drawBackground } from "@/lib/render";
 import { useDuo } from "@/hooks/useDuo";
 import DuoLobby from "@/components/DuoLobby";
 import DuoPartnerCard from "@/components/DuoPartnerCard";
@@ -1118,6 +1119,7 @@ export default function NeonRush() {
     halloweenBossSpawned: false,
     duo: false,
     lo: emptyLoadout() as Loadout,
+    background: null as ReturnType<typeof createBackground> | null,
   });
 
   useEffect(() => {
@@ -1663,6 +1665,12 @@ export default function NeonRush() {
     const canvas = canvasRef.current!;
     const ctx = canvas.getContext("2d")!;
     const s = stateRef.current;
+
+    // Initialize background system
+    if (!s.background) {
+      s.background = createBackground(5);
+    }
+
     let raf = 0;
     let last = performance.now();
 
@@ -1908,30 +1916,9 @@ export default function NeonRush() {
         s.fpsAcc = 0;
         s.fpsFrames = 0;
       }
-      const backgroundStyle = visualStyle("background", s.backgroundStyle);
-      ctx.fillStyle = s.halloween
-        ? "rgba(23, 8, 30, 0.38)"
-        : colorWithAlpha(backgroundStyle.colors[0]!, 0.38);
-      ctx.fillRect(0, 0, s.w, s.h);
-      ctx.save();
-      ctx.globalAlpha = 0.25;
-      ctx.strokeStyle = s.halloween ? "#6b2c45" : backgroundStyle.colors[1]!;
-      ctx.lineWidth = 1;
-      const gs = 40;
-      const off = (s.t * 0.03) % gs;
-      for (let x = -off; x < s.w; x += gs) {
-        ctx.beginPath();
-        ctx.moveTo(x, 0);
-        ctx.lineTo(x, s.h);
-        ctx.stroke();
-      }
-      for (let y = -off; y < s.h; y += gs) {
-        ctx.beginPath();
-        ctx.moveTo(0, y);
-        ctx.lineTo(s.w, y);
-        ctx.stroke();
-      }
-      ctx.restore();
+      // New background system
+      drawBackground(ctx, s.background!, s.t, s.w, s.h, s.player.x, s.player.y);
+      // Halloween moon overlay (kept from original)
       if (s.halloween) {
         const moonX = s.w - 76;
         const moonY = 92;
