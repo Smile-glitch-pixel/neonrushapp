@@ -265,6 +265,7 @@ export function createRenderPipeline(
         x: state.player.x,
         y: state.player.y,
         r: state.player.r,
+        type: 'player',
         skinColors: state.player.skinColors,
         skinId: state.player.skinId,
         isDown: state.player.isDown,
@@ -278,6 +279,7 @@ export function createRenderPipeline(
           x: state.ghost.x,
           y: state.ghost.y,
           r: state.player.r, // même taille
+          type: 'ghost',
           skinColors: state.ghost.colors,
           skinId: 'rare', // ou déduit du partenaire
           isDown: state.ghost.down,
@@ -366,7 +368,7 @@ export function createRenderPipeline(
         trailPoints: getTrailPoints().length,
         backgroundLayers: background.length,
         bloomEnabled: settings.bloomEnabled,
-        qualityPreset: Object.keys(QualityPresets).find(k => QualityPresets[k] === settings) || 'custom',
+        qualityPreset: (Object.keys(QualityPresets) as Array<keyof typeof QualityPresets>).find(k => QualityPresets[k] === settings) || 'custom',
       };
     },
   };

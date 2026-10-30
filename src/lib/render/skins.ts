@@ -230,7 +230,9 @@ export const mythicRenderer: SkinRenderer = ({ ctx, x, y, size, time, colors, is
 
   // Multi-aura prismatique
   for (let i = 0; i < 4; i++) {
-    const hue = (parseInt(colors.glow.match(/\d+/) || ['300'])[0] + i * 60 + time * 0.05) % 360;
+    const glowMatch = colors.glow.match(/\d+/);
+    const baseHue = glowMatch ? parseInt(glowMatch[0]) : 300;
+    const hue = (baseHue + i * 60 + time * 0.05) % 360;
     const glowColor = `hsl(${hue}, 80%, 60%)`;
     drawGlowRing(ctx, x, y, size * (1.5 + i * 0.5), glowColor, 0.8 - i * 0.15);
   }
@@ -267,7 +269,9 @@ export const mythicRenderer: SkinRenderer = ({ ctx, x, y, size, time, colors, is
     const orbitRadius = size * 1.6;
     const px = x + Math.cos(angle) * orbitRadius;
     const py = y + Math.sin(angle) * orbitRadius;
-    const hue = (parseInt(colors.accent.match(/\d+/) || ['60'])[0] + i * 45 + time * 0.1) % 360;
+    const accentMatch = colors.accent.match(/\d+/);
+    const baseHue = accentMatch ? parseInt(accentMatch[0]) : 60;
+    const hue = (baseHue + i * 45 + time * 0.1) % 360;
     ctx.fillStyle = `hsl(${hue}, 100%, 70%)`;
     ctx.beginPath();
     ctx.arc(px, py, size * 0.15 * (1 + Math.sin(time * 0.01 + i) * 0.5), 0, Math.PI * 2);

@@ -137,7 +137,7 @@ export const QualityPresets = {
 export function detectQualityPreset(): keyof typeof QualityPresets {
   // Vérifie les capacités GPU/CPU
   const canvas = document.createElement('canvas');
-  const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+  const gl = (canvas.getContext('webgl') || canvas.getContext('experimental-webgl')) as WebGLRenderingContext | null;
 
   let score = 0;
 

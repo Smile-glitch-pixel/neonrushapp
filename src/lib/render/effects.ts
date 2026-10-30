@@ -13,7 +13,7 @@ export interface ScreenEffect {
   data?: Record<string, unknown>; // données spécifiques (ex: couleur flash)
 }
 
-const screenEffects: ScreenEffect[] = [];
+export const screenEffects: ScreenEffect[] = [];
 
 /** Clamp utility (hoisted) */
 function clamp(v: number, min: number, max: number): number {
@@ -175,6 +175,7 @@ export function initBloomCanvases(width: number, height: number): void {
     bloomCanvas = document.createElement('canvas');
     bloomBlurCanvas = document.createElement('canvas');
   }
+  if (!bloomCanvas || !bloomBlurCanvas) return;
   bloomCanvas.width = width;
   bloomCanvas.height = height;
   bloomBlurCanvas.width = width;
@@ -211,7 +212,7 @@ export function applyBloom(ctx: CanvasRenderingContext2D, sourceCanvas: HTMLCanv
 
   // Pass 2: vertical
   bctx.filter = 'blur(4px)';
-  bctx.drawImage(blurCanvas, 0, 0);
+  bctx.drawImage(bloomBlurCanvas, 0, 0);
 
   // 3. Blend additif sur le canvas principal
   ctx.globalCompositeOperation = 'lighter';
