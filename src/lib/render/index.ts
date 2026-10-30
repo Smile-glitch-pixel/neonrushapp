@@ -4,7 +4,6 @@
  * Remplace le gros render loop dans NeonRush.tsx
  */
 
-import type { CanvasRenderingContext2D } from 'react';
 import {
   particlePool,
   updateParticles,

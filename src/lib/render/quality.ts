@@ -111,7 +111,7 @@ export const QualityPresets = {
   },
 
   ultra: {
-    dpr: window.devicePixelRatio || 2,
+    dpr: 2, // computed lazily in getQualitySettings
     maxParticles: 500,
     particleQuality: 'high' as const,
     bloomEnabled: true,
@@ -201,8 +201,13 @@ export function getQualitySettings(
   const preset = QualityPresets[presetKey];
 
   // Calcule DPR effectif (capé par la taille du canvas)
-  const maxDPR = Math.min(preset.dpr, 2048 / Math.max(canvasWidth, canvasHeight));
-  const effectiveDPR = Math.max(1, Math.min(preset.dpr, maxDPR));
+  // Pour 'ultra', utilise le devicePixelRatio réel si dispo
+  const baseDPR = presetKey === 'ultra' && typeof window !== 'undefined'
+    ? (window.devicePixelRatio || preset.dpr)
+    : preset.dpr;
+
+  const maxDPR = Math.min(baseDPR, 2048 / Math.max(canvasWidth, canvasHeight));
+  const effectiveDPR = Math.max(1, Math.min(baseDPR, maxDPR));
 
   return {
     ...preset,
@@ -290,6 +295,7 @@ function getLowerPreset(current: QualitySettings): Partial<QualitySettings> | nu
 
 /** Sauvegarde la préférence utilisateur */
 export function saveQualityPreference(preset: keyof typeof QualityPresets): void {
+  if (typeof window === 'undefined') return;
   try {
     localStorage.setItem('neonrush_quality_preset', preset);
   } catch {}
@@ -297,6 +303,7 @@ export function saveQualityPreference(preset: keyof typeof QualityPresets): void
 
 /** Charge la préférence utilisateur */
 export function loadQualityPreference(): keyof typeof QualityPresets | null {
+  if (typeof window === 'undefined') return null;
   try {
     const saved = localStorage.getItem('neonrush_quality_preset');
     if (saved && saved in QualityPresets) {
@@ -308,6 +315,7 @@ export function loadQualityPreference(): keyof typeof QualityPresets | null {
 
 /** Écouteur pour prefers-reduced-motion */
 export function setupReducedMotionListener(onChange: (reduced: boolean) => void): () => void {
+  if (typeof window === 'undefined') return () => {};
   const mediaQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
   const handler = (e: MediaQueryListEvent) => onChange(e.matches);
   mediaQuery.addEventListener('change', handler);

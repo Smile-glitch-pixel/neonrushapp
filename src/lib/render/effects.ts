@@ -15,6 +15,11 @@ export interface ScreenEffect {
 
 const screenEffects: ScreenEffect[] = [];
 
+/** Clamp utility (hoisted) */
+function clamp(v: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, v));
+}
+
 /** Ajoute un screen shake */
 export function addScreenShake(intensity: number = 1, duration: number = 0.3): void {
   screenEffects.push({ type: 'shake', intensity: clamp(intensity, 0, 3), duration, timer: duration });
@@ -44,8 +49,6 @@ export function addSlowMotion(intensity: number = 0.5, duration: number = 0.5): 
 export function addFreezeFrame(duration: number = 0.05): void {
   screenEffects.push({ type: 'freeze', intensity: 1, duration, timer: duration });
 }
-
-const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v));
 
 /** Met à jour tous les effets (appelé chaque frame) */
 export function updateScreenEffects(dt: number): number {

@@ -3,7 +3,6 @@
  * Orbes, hazards, vaults, powerups, ghost partenaire, etc.
  */
 
-import type { CanvasRenderingContext2D } from 'react';
 import { renderSkin, parseSkinColors } from './skins';
 
 export interface RenderEntity {

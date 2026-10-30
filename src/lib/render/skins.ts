@@ -3,8 +3,6 @@
  * Remplace le gros switch-case de NeonRush.tsx par des renderers modulaires et extensibles.
  */
 
-import type { CanvasRenderingContext2D } from 'react';
-
 export interface SkinColors {
   primary: string;
   secondary: string;
